@@ -1,0 +1,18 @@
+{
+  "disc_count": 1,
+  "verdict": "single",
+  "differing_program_fields": [],
+  "warnings": [],
+  "discs": [
+    {
+      "index": 1,
+      "cue_name": "Alundra 2 - A New Legend Begins (USA).cue",
+      "cue_path": "disc/Alundra 2 - A New Legend Begins (USA).cue",
+      "serial": "SLUS-01017",
+      "boot_exe": "SLUS_010.17",
+      "entry_pc": "0x8003CF4C",
+      "track_count": 1,
+      "required_disc_fp": "3d17db95c996c1bd3777abc3a9b5f8f43fca9f1cd2b3d23f0262b28cde48dfc7"
+    }
+  ]
+}
