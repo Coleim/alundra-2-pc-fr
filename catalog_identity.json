@@ -1,0 +1,48 @@
+{
+  "format_version": 1,
+  "game": {
+    "name": "Alundra 2",
+    "id": "SLUS-01017",
+    "boot_exe": "SLUS_010.17"
+  },
+  "marketing": {
+    "description": "",
+    "publisher": "",
+    "year": "",
+    "region": "USA",
+    "players": 1
+  },
+  "rom_identity": {
+    "cue_name": "Alundra 2 - A New Legend Begins (USA).cue",
+    "bin_name": "Alundra 2 - A New Legend Begins (USA).bin",
+    "track_counts": [
+      1
+    ],
+    "require_cue": true,
+    "data_track": {
+      "size": 607389888,
+      "md5": "250eba52e8878b2bb51bbce2af56742a",
+      "sha1": "da6c68a5d1c7ee3dd5ae56b8560d729a5fa4146a",
+      "crc32": "3a6bd8ad"
+    },
+    "disc_fp": "3d17db95c996c1bd3777abc3a9b5f8f43fca9f1cd2b3d23f0262b28cde48dfc7"
+  },
+  "exe": {
+    "load_address": "0x80017000",
+    "entry_pc": "0x8003CF4C",
+    "text_size": "0x0004A000",
+    "stack_base": "0x801FFFF0"
+  },
+  "seeds": {
+    "count": 656,
+    "source": "boot_exe_jal"
+  },
+  "warnings": [
+    "cue has only 1 TRACK \u2014 Track-01-only dumps fail multi-track netplay/catalog gates; prefer a full Redump cue."
+  ],
+  "notes": [
+    "entry_pc/load_address/text_size/stack_base taken from PS-X EXE header.",
+    "seeds are first-pass boot-EXE JAL targets (+ entry); expect to grow as overlays / runtime paths are discovered.",
+    "required_disc_fp is psxrecomp-toc-v1 (matches runtime DiscIdentity)."
+  ]
+}
