@@ -1,33 +1,34 @@
-<p align="center"><a href="https://alexbeavs-ps1-ports.github.io/psxrecomp-ports/"><img src="https://raw.githubusercontent.com/alexbeavs-ps1-ports/psxrecomp-ports/main/docs/assets/alexbeav-ps1-recomps-banner.png" alt="Alexbeav's PS1 Recomps" width="100%"></a></p>
+# Alundra 2 – Une Légende Est Née (France) — Recompiled
 
-# Alundra 2
+Static recompilation of the French PAL release of **Alundra 2** (`SLES-02601`),
+adapted from [alexbeavs-ps1-ports/alundra-2-recomp](https://github.com/alexbeavs-ps1-ports/alundra-2-recomp)
+(USA, `SLUS-01017`) and built on
+[psxrecomp](https://github.com/Alexbeav/psxrecomp) +
+[recomp-ui](https://github.com/Alexbeav/recomp-ui).
 
+**BIOS:** none required — the bundled, MIT-licensed OpenBIOS is used. A
+user-supplied SCPH-1001 dump remains an optional choice.
 
-<!-- release-standard:bios -->
-**BIOS:** SCPH-1001 (USA) retail BIOS, 524288 bytes, SHA-256 `71af94d1e47a68c11e8fdb9f8368040601514a42a5a399cda48c7d3bff1e99d3`. Supply your own dump; releases do not use OpenBIOS.
-<!-- /release-standard:bios -->
+**Disc:** your own dump of `Alundra 2 - Une Legende Est Nee (France)`
+(single-track MODE2/2352 CUE/BIN, 633193680 bytes). Disc images live under
+`disc/` and are never committed.
+
+## Build (macOS / Linux)
+
+```bash
+brew install cmake ninja pkg-config freetype harfbuzz   # macOS
+git submodule update --init --recursive
+./psxrecomp/tools/ci/build_emitters.sh
+python3 psxrecomp/psxrecomp_cli.py generate \
+  --config game.toml --project-root . \
+  --disc "disc/Alundra 2 - Une Legende Est Nee (France).cue"
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target psx-runtime
+```
 
 ## Status
 
-Latest release: v0.1.0, built on psxrecomp pin I 0.1.23.
-
-- Packages for Windows x64, Linux x64, macOS Apple Silicon and macOS Intel passed the CI build and package checks.
-- Replay check: on Windows, a build on pin I 0.1.23 played 1 of 1 recorded route to the end without a crash. That check compares memory, not the picture, and is not a play test.
-- Not claimed: full-game completion, audio fidelity or multiplayer. Setup and gameplay reports from Linux, macOS and Steam Deck are welcome.
-
-Known issues for the current version are in its [release notes](https://github.com/alexbeavs-ps1-ports/alundra-2-recomp/releases/tag/v0.1.0).
-
-## About this project
-
-These ports are developed by a hobbyist (a DevSecOps engineer, not a game
-programmer) with substantial AI assistance. What keeps that honest: every
-change is validated before it ships - boot gates, hardware-oracle A/B
-comparisons (Beetle/DuckStation), deterministic replay probes, and a shared
-findings registry that documents failures as carefully as successes. AI
-writes most of the code; the evidence discipline decides what survives.
-Bug reports welcome - expect them to be investigated the same way.
-
-tl;dr AI writes the code, but I always test it myself before pushing
+Local bring-up of the French release: not qualified.
 
 <!-- framework-pin -->
 **Framework:** `psxrecomp` and `recomp-ui` are submodules pinned to psxrecomp pin I 0.1.23 (psxrecomp `578bd3b`, recomp-ui `5302f1f`).

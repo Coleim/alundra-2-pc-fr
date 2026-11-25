@@ -18,9 +18,9 @@ project(alundra_2 LANGUAGES C CXX)
 set(PSX_RECOMP_UI ON CACHE BOOL "Use recomp-ui" FORCE)
 set(PSX_NETPLAY OFF CACHE BOOL "Netplay is not qualified" FORCE)
 set(PSX_SETUP_WIZARD ON CACHE BOOL "Enable owned-input setup" FORCE)
-set(PSXRECOMP_BIOS_STEMS "SCPH1001" CACHE STRING "Bound retail BIOS" FORCE)
-set(PSXRECOMP_BIOS_STEM "SCPH1001" CACHE STRING "Accepted BIOS" FORCE)
-set(PSXRECOMP_BIOS_PROFILE "${PSXRECOMP_ROOT}/bios/SCPH1001.toml" CACHE FILEPATH "Accepted BIOS" FORCE)
+set(PSXRECOMP_BIOS_STEMS "OpenBIOS;SCPH1001" CACHE STRING "OpenBIOS default, optional retail" FORCE)
+set(PSXRECOMP_BIOS_STEM "OpenBIOS" CACHE STRING "Primary BIOS" FORCE)
+set(PSXRECOMP_BIOS_PROFILE "${PSXRECOMP_ROOT}/bios/OpenBIOS.toml" CACHE FILEPATH "Primary BIOS" FORCE)
 include("${PSXRECOMP_ROOT}/runtime/runtime.cmake")
 
 # This project's own mod catalog. The FRAMEWORK stages it -- together with its
@@ -45,8 +45,8 @@ psxrecomp_add_game_runtime(psx-runtime
     APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/psxrecomp.ico"
 
 
-    GEN_MARKER "generated/SLUS_010.17_dispatch.c"
-    GEN_FULL_GLOB "generated/SLUS_010.17_full_*.c"
+    GEN_MARKER "generated/SLES_026.01_dispatch.c"
+    GEN_FULL_GLOB "generated/SLES_026.01_full_*.c"
     CODEGEN_SETUP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/codegen_setup.c"
 )
 

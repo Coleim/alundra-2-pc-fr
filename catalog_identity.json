@@ -2,39 +2,39 @@
   "format_version": 1,
   "game": {
     "name": "Alundra 2",
-    "id": "SLUS-01017",
-    "boot_exe": "SLUS_010.17"
+    "id": "SLES-02601",
+    "boot_exe": "SLES_026.01"
   },
   "marketing": {
     "description": "",
     "publisher": "",
     "year": "",
-    "region": "USA",
+    "region": "France",
     "players": 1
   },
   "rom_identity": {
-    "cue_name": "Alundra 2 - A New Legend Begins (USA).cue",
-    "bin_name": "Alundra 2 - A New Legend Begins (USA).bin",
+    "cue_name": "Alundra 2 - Une Legende Est Nee (France).cue",
+    "bin_name": "Alundra 2 - Une Legende Est Nee (France).bin",
     "track_counts": [
       1
     ],
     "require_cue": true,
     "data_track": {
-      "size": 607389888,
-      "md5": "250eba52e8878b2bb51bbce2af56742a",
-      "sha1": "da6c68a5d1c7ee3dd5ae56b8560d729a5fa4146a",
-      "crc32": "3a6bd8ad"
+      "size": 633193680,
+      "md5": "d111335ee89bbe058f5375280c136946",
+      "sha1": "934c4bd4f338d533ed7fbd0ded9c2dd98e59dedf",
+      "crc32": "ca341233"
     },
-    "disc_fp": "3d17db95c996c1bd3777abc3a9b5f8f43fca9f1cd2b3d23f0262b28cde48dfc7"
+    "disc_fp": "52ad2ecd3d51f6aded80e14cc817b04586f851232d4a3f8d62a8ed87237dfb71"
   },
   "exe": {
     "load_address": "0x80017000",
-    "entry_pc": "0x8003CF4C",
-    "text_size": "0x0004A000",
+    "entry_pc": "0x8003CFCC",
+    "text_size": "0x00046800",
     "stack_base": "0x801FFFF0"
   },
   "seeds": {
-    "count": 656,
+    "count": 658,
     "source": "boot_exe_jal"
   },
   "warnings": [

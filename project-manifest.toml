@@ -1,22 +1,20 @@
 [project]
 title = "Alundra 2"
-region = "USA"
+region = "France"
 track = "recompilation"
 status = "source_prepared_unqualified"
 
 [retail_identity]
 disc_count = 1
-serials = ["SLUS-01017"]
-executable_paths = ["SLUS_010.17"]
-executable_sha256 = "95e7e5c48d738bcaa4898ae5277f43570da2e7062355c69887cc162d5b5848c5"
+serials = ["SLES-02601"]
+executable_paths = ["SLES_026.01"]
+executable_sha256 = "2788c64bbd9bb858c2b6f407a2aa4c7c9bdf61e433fe7101f247fb8fbe78e6bd"
 load_address = "0x80017000"
-entry_point = "0x8003CF4C"
+entry_point = "0x8003CFCC"
 
 [bios]
-required = true
-profile = "SCPH1001"
-size = 524288
-sha256 = "71af94d1e47a68c11e8fdb9f8368040601514a42a5a399cda48c7d3bff1e99d3"
+required = false
+profile = "OpenBIOS"
 
 [framework]
 name = "PSXRecomp"
@@ -26,9 +24,9 @@ tree = "a0aa850abb6e2c6c6e9fa19f1c3d9b5446f2f65d"
 recomp_ui_commit = "5302f1fc0823afb1a9c4554036902bb5b48fd896"
 template_commit = "77fc84d18cd341ba0c0feb68a63f0904f8c467f0"
 license = "See the pinned dependency license; this binding does not approve commercial use."
-pin = "pin I 0.1.19"
+pin = "pin I 0.1.23"
 
 [release]
 version = "0.1.0"
 private_only = true
-profile_status = "CI training pending"
+profile_status = "local bring-up"

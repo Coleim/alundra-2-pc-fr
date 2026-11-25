@@ -90,14 +90,13 @@ exec bash "${PACKAGER}" \
   --root "${ROOT}" \
   --build-dir "${BUILD_DIR}" \
   --artifact "${ARTIFACT_TAG}" \
-  --zip-prefix alundra-2 \
+  --zip-prefix alundra-2-fr \
   --exe-name alundra_2 \
-  --omit-openbios \
   --display-name "Alundra 2" \
   --recompiler-build "${RECOMPILER_BUILD}" \
   --version-env RELEASE_VERSION \
-  --disc-hint "Alundra 2 owned disc" \
-  --bios-hint "your own SCPH-1001 (USA) BIOS dump (524288 bytes; SHA-256 71af94d1e47a68c11e8fdb9f8368040601514a42a5a399cda48c7d3bff1e99d3)" \
+  --disc-hint "Alundra 2 - Une Legende Est Nee (France) owned disc" \
+  --bios-hint "optional: your own SCPH-1001 (USA) BIOS dump; OpenBIOS is used otherwise" \
   --runtime-dir mods \
   --project-file project-manifest.toml \
   --project-file disc_set.json \
