@@ -48,3 +48,23 @@ Everything generated from the disc (`extracted/`, `decomp/`) is git-ignored.
   layer (`D_8005C52C` holds the SIO register base), not the controller reader.
 - `PadInit`-style wrappers around the BIOS `InitPad`/`StartPad` thunks live at `0x8003D524` and
   `0x8003D5B4`, but have no direct callers: they are reached through a pointer table.
+
+## Controller path (PsyQ libpad)
+
+- Raw receive buffers, filled from the SIO interrupt handler: `0x80082030` (pad 1) and
+  `0x80082053` (pad 2), 35 bytes each (`0x23` stride); matching transmit buffers at `0x80082078`.
+- `PadInitDirect(pad1, pad2)` (`0x80047E98`) is called from `func_8002A510` with the user buffer
+  `0x8006AED0`. That buffer is what the game reads: byte 0 status (0 = ok), byte 1 terminal id
+  (`0x41` digital, `0x73` analog), bytes 2-3 buttons (active low), then the analog sticks.
+- Found by diffing RAM with a button held (`tools/find_pad_buffer.py`): the button bit clears in
+  both `0x80082032` and `0x8006AED2`, for LEFT, RIGHT, UP and CROSS.
+- `PadGetState` (`0x80045A84`) and `PadInfoMode` (`0x80045B50`) match libpad's return values and
+  `term` switch (1, 2, 3, 4).
+
+## Replacing a function
+
+`psxrecomp/runtime/include/func_override.h`: `func_override_add(id, addr, fn, credit)` swaps a guest
+function (static EXE, overlay or dirty RAM) for hand-written C, with `func_override_call_original` and
+`func_override_guest_call`; an overlay guard exists (`func_override_add_guarded`). Limit:
+`FO_MAX_OVERRIDES = 128`. Once more functions are rewritten the limit must be raised
+(fork the framework).

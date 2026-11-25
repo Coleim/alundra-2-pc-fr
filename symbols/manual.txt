@@ -1,0 +1,5 @@
+// Hand-made names. Layer applied last by tools/build_symbols.py.
+// libpad (PsyQ) - controller layer, main executable
+PadInitDirect = 0x80047E98; // type:func
+PadGetState = 0x80045A84; // type:func
+PadInfoMode = 0x80045B50; // type:func

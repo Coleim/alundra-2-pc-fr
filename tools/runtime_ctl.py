@@ -106,7 +106,7 @@ class Runtime:
 
     def read_ram(self, addr, length):
         r = self.send({"cmd": "read_ram", "addr": "0x%08X" % addr, "len": length}, timeout=120)
-        h = r.get("data") or r.get("hex") or ""
+        h = r.get("hex") or r.get("data") or ""
         return bytes.fromhex(h)
 
 
