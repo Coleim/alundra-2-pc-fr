@@ -35,3 +35,16 @@ The CD log shows each data sector DMA preceded by a 12-byte header read, and the
     python -m splat split config/main.yaml
 
 Everything generated from the disc (`extracted/`, `decomp/`) is git-ignored.
+
+## Test harness caveats
+
+- `build-dev` (`-DPSX_DEBUG_TOOLS=ON`) exposes the TCP debug server on port 4370; `tools/runtime_ctl.py`
+  and `tools/play_to_gameplay.py` drive it. `--headless` gives no window and no sound.
+- A long turbo run once stalled inside the memory-card SIO handling (`in_exc=1`, repeated
+  CTRL writes from `0x80046318`, frame ~25763, opening cutscene). The starvation watchdog killed it
+  after ~320 s. Earlier runs passed the same point, so this is intermittent: the harness must
+  detect a dead runtime and restart instead of waiting.
+- The code around `0x80046300-0x80046910` in the main executable is the PsyQ low-level SIO/memory-card
+  layer (`D_8005C52C` holds the SIO register base), not the controller reader.
+- `PadInit`-style wrappers around the BIOS `InitPad`/`StartPad` thunks live at `0x8003D524` and
+  `0x8003D5B4`, but have no direct callers: they are reached through a pointer table.
