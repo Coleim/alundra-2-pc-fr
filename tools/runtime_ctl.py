@@ -23,9 +23,15 @@ def pad_word(spec: str) -> int:
     return word
 
 
+class Stalled(RuntimeError):
+    """The emulation thread stopped advancing frames."""
+
+
 class Runtime:
-    def __init__(self, port=4370, host="127.0.0.1"):
+    def __init__(self, port=4370, host="127.0.0.1", stall_s=45.0, on_stall=None):
         self.addr = (host, port)
+        self.stall_s = stall_s
+        self.on_stall = on_stall
 
     def send(self, obj, timeout=60.0):
         s = socket.create_connection(self.addr, timeout=timeout)
@@ -67,9 +73,19 @@ class Runtime:
     def frame(self):
         return self.send({"cmd": "frame"}).get("frame")
 
-    def wait_frames(self, n, poll=0.01):
+    def wait_frames(self, n, poll=0.02):
         start = self.frame()
-        while (self.frame() or 0) < start + n:
+        last, last_t = start, time.time()
+        while True:
+            f = self.frame() or 0
+            if f >= start + n:
+                return
+            if f != last:
+                last, last_t = f, time.time()
+            elif time.time() - last_t > self.stall_s:
+                if self.on_stall:
+                    self.on_stall(f)
+                raise Stalled(f"no frame progress for {self.stall_s:.0f}s at frame {f}")
             time.sleep(poll)
 
     def press(self, spec, hold=4, then_wait=20):

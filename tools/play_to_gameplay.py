@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from runtime_ctl import Runtime
 
 
-def main():
-    rt = Runtime()
+def main(rt=None):
+    rt = rt or Runtime()
     rt.turbo(True)
     rt.wait_frames(5500)          # BIOS, logos, intro movie
     rt.press("START", 6, 600)     # skip to the title screen
@@ -23,8 +23,8 @@ def main():
     rt.press("CROSS", 4, 3000)    # Normal -> opening cutscene
     rt.wait_frames(18000)         # cutscene and first load
     rt.turbo(False)
-    print("frame", rt.frame())
+    return rt.frame()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    print("frame", main())
