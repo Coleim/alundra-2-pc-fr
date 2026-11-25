@@ -1,0 +1,40 @@
+name: EVENT00
+options:
+  basename: event00
+  target_path: extracted/files/EVENT00.BIN
+  elf_path: decomp-build/event00.elf
+  base_path: ..
+  platform: psx
+  compiler: PSYQ
+  asm_path: decomp/asm/event00
+  src_path: src/event00
+  build_path: decomp-build
+  ld_script_path: decomp-build/event00.ld
+  ld_dependencies: True
+  find_file_boundaries: False
+  gp_value: 0x8005D168
+  o_as_suffix: True
+  use_legacy_include_asm: False
+  section_order: [".rodata", ".text", ".data", ".bss"]
+  symbol_addrs_path:
+    - symbols/main_symbols.txt
+    - symbols/event00_symbols.txt
+  reloc_addrs_path:
+    - symbols/event00_relocs.txt
+  undefined_funcs_auto_path: decomp-build/event00_undefined_funcs_auto.txt
+  undefined_syms_auto_path: decomp-build/event00_undefined_syms_auto.txt
+  subalign: 2
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+segments:
+  - name: event00
+    type: code
+    start: 0x0
+    vram: 0x80084ed0
+    subsegments:
+      - [0x0, data, head]
+      - [0x2800, asm, code]
+      - [0x26000, data, tail]
+  - [0x77168]
