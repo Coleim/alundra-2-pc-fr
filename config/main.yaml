@@ -1,0 +1,62 @@
+name: SLES_026.01
+sha1: bf3a491960459364c5dfb1bbfb52bf516aee500e
+options:
+  basename: sles_026.01
+  target_path: extracted/files/SLES_026.01
+  elf_path: decomp-build/main.elf
+  base_path: ..
+  platform: psx
+  compiler: PSYQ
+
+  asm_path: decomp/asm/main
+  src_path: src/main
+  build_path: decomp-build
+  # create_asm_dependencies: True
+
+  ld_script_path: decomp-build/main.ld
+  ld_dependencies: True
+
+  find_file_boundaries: False
+  gp_value: 0x8005D168
+  # ld_gp_expression: main_SCOMMON_START + 0x7FF0
+
+  o_as_suffix: True
+  use_legacy_include_asm: False
+
+  section_order: [".rodata", ".text", ".data", ".bss"]
+  # auto_link_sections: [".data", ".rodata", ".bss"]
+
+  symbol_addrs_path:
+    - symbols/main_symbols.txt
+  reloc_addrs_path:
+    - symbols/main_relocs.txt
+
+  undefined_funcs_auto_path: decomp-build/main_undefined_funcs_auto.txt
+  undefined_syms_auto_path: decomp-build/main_undefined_syms_auto.txt
+
+
+  subalign: 2
+
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+
+  # Uncomment this line if you need to use the maspsx reorder workaround hack
+  # https://github.com/mkst/maspsx?tab=readme-ov-file#include_asm-reordering-workaround-hack
+  # include_asm_macro_style: maspsx_hack
+segments:
+  - name: header
+    type: header
+    start: 0x0
+
+  - name: main
+    type: code
+    start: 0x800
+    vram: 0x80017000
+    # bss_size: Please fill out this value when you figure out the bss size
+    subsegments:
+      - [0x800, rodata, 800]
+      - [0x3110, asm, 3110] # estimated
+      - [0x3BA40, data, 3BA40] # estimated
+  - [0x47000]

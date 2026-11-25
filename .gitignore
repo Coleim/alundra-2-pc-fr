@@ -86,3 +86,9 @@ starvation_dump.jsonl
 /.local-context/
 # Local release-gate receipts (regenerate per run; never ship)
 /_gate/
+
+# Decompilation workspace (game data and local tooling)
+/extracted/
+/.venv-decomp/
+/decomp-build/
+/decomp/
