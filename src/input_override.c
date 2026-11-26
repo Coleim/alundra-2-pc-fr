@@ -14,6 +14,7 @@
  *
  * Environment:
  *   A2_ANALOG=0   disable the analog extension (default: enabled)
+ *   A2_OVERRIDES=0  register no replacement at all (the original code runs)
  *   A2_VERIFY=1   also run the original code and count disagreements
  *                 (counters a2.heading.calls / a2.heading.mismatch)
  */
@@ -132,6 +133,7 @@ __attribute__((constructor))
 static void a2_register_input_overrides(void)
 {
     const char *e;
+    if ((e = getenv("A2_OVERRIDES")) && e[0] == '0') return;
     if ((e = getenv("A2_ANALOG")) && e[0] == '0') s_analog = 0;
     if ((e = getenv("A2_VERIFY")) && e[0] == '1') s_verify = 1;
 
