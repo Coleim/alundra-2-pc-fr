@@ -10,7 +10,8 @@ import re
 import sys
 
 MODULES = {"main": "decomp/asm/main/3110.s", "game00": "decomp/asm/game00/code.s",
-           "event00": "decomp/asm/event00/code.s"}
+           "event00": "decomp/asm/event00/code.s", "game01": "decomp/asm/game01/code.s",
+           "game02": "decomp/asm/game02/code.s", "game03": "decomp/asm/game03/code.s"}
 
 
 def labels(path):

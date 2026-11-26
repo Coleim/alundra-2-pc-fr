@@ -1,0 +1,40 @@
+name: GAME01
+options:
+  basename: game01
+  target_path: extracted/files/GAME01.BIN
+  elf_path: decomp-build/game01.elf
+  base_path: ..
+  platform: psx
+  compiler: PSYQ
+  asm_path: decomp/asm/game01
+  src_path: src/game01
+  build_path: decomp-build
+  ld_script_path: decomp-build/game01.ld
+  ld_dependencies: True
+  find_file_boundaries: False
+  gp_value: 0x8005D168
+  o_as_suffix: True
+  use_legacy_include_asm: False
+  section_order: [".rodata", ".text", ".data", ".bss"]
+  symbol_addrs_path:
+    - symbols/main_symbols.txt
+    - symbols/game01_symbols.txt
+  reloc_addrs_path:
+    - symbols/game01_relocs.txt
+  undefined_funcs_auto_path: decomp-build/game01_undefined_funcs_auto.txt
+  undefined_syms_auto_path: decomp-build/game01_undefined_syms_auto.txt
+  subalign: 2
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+segments:
+  - name: game01
+    type: code
+    start: 0x0
+    vram: 0x80084ed0
+    subsegments:
+      - [0x0, data, head]
+      - [0x5d8, asm, code]
+      - [0x8ba0, data, tail]
+  - [0x70888]
