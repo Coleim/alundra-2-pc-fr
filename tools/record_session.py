@@ -25,5 +25,5 @@ def main(rt):
                 rt.wait_frames(60)
                 rt.hold("none")
                 rt.wait_frames(15)
-    except OSError:
+    except ConnectionError:                          # refused/reset: the runtime has exited
         return "runtime exited (frame budget reached)"

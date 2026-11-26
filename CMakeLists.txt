@@ -65,7 +65,8 @@ endforeach()
 
 # Hand-written replacements for guest functions (see src/ and docs/DECOMP_NOTES.md).
 target_sources(psx-runtime PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/input_override.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/input_override.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/a2_diag.c")
 target_include_directories(psx-runtime PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
 if(NOT WIN32 AND NOT APPLE)
     target_link_libraries(psx-runtime PRIVATE m)

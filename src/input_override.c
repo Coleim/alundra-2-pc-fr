@@ -16,7 +16,13 @@
  *   A2_ANALOG=0   disable the analog extension (default: enabled)
  *   A2_OVERRIDES=0  register no replacement at all (the original code runs)
  *   A2_VERIFY=1   also run the original code and count disagreements
- *                 (counters a2.heading.calls / a2.heading.mismatch)
+ *                 (counters a2.heading.calls / a2.heading.mismatch); the original
+ *                 then owns the guest timing, and its cycle cost per path is
+ *                 printed at exit
+ *
+ * Timing: without A2_VERIFY the replacement charges the guest cycles the original
+ * takes on the same path (COST_* below), so the rest of the machine keeps its
+ * interrupt phase.
  */
 
 #include <math.h>
@@ -26,6 +32,7 @@
 
 #include "cpu_state.h"
 #include "func_override.h"
+#include "psx_cycles.h"
 
 extern uint32_t psx_read_word(uint32_t addr);
 extern uint16_t psx_read_half(uint32_t addr);
@@ -56,25 +63,72 @@ static volatile int32_t s_last_stick_x, s_last_stick_y;
 
 static int32_t s16(uint16_t v) { return (int16_t)v; }
 
-/* Faithful port of func_800A09C0. */
-static int32_t input_heading_faithful(int32_t *input_angle_out)
+/* Paths through the original, for its timing. */
+enum { PATH_NONE, PATH_CAMERA, PATH_FORCED, PATH_COUNT };
+
+/* Guest cycles of the original per path. The runtime charges 1 cycle per instruction,
+ * I-cache refills (7 - word offset per missed line) and RAM loads. The code is never still
+ * cached from the previous call, so each path costs a fixed amount.
+ * Measured with A2_VERIFY=1 on the reference session: camera path 102 (7857 calls, min = max).
+ * The other paths did not occur there; their costs are estimates from the same model
+ * (about 6.5 cycles per load), to be replaced by measurements. */
+#define COST_CAMERA       102u   /* measured: 23 instructions, 8 lines, 4 loads */
+#define COST_NO_INPUT     40u    /* estimate: 8 instructions, 4 lines, 1 load */
+#define COST_FORCED       106u   /* estimate: 22 instructions, 8 lines, 5 loads */
+#define COST_FORCED_MISS  18u    /* estimate, added to the camera path: 4 instructions, 1 line, 1 load */
+#define COST_SIDE_VIEW    24u    /* estimate, added: 7 instructions, 1 line + 1 earlier refill, 1 load */
+
+/* Faithful port of func_800A09C0. *cost receives the guest cycles the original takes for
+ * the same input. */
+static int32_t input_heading_faithful(int32_t *input_angle_out, int *path, uint32_t *cost)
 {
     int32_t angle = (int32_t)psx_read_word(INPUT_STATE + 0x10);
     *input_angle_out = angle;
-    if (angle == -1)
+    if (angle == -1) {
+        *path = PATH_NONE;
+        *cost = COST_NO_INPUT;
         return -1;
-
-    if (s16(psx_read_half(HEADING_MODE)) == 2) {
-        uint16_t held = psx_read_half(INPUT_STATE + 0x02);
-        if (held & BTN_RIGHT) angle = 0;
-        if (held & BTN_LEFT)  angle = 0x100;
     }
 
-    if (s16(psx_read_half(FORCED_HEADING + 8)) != 0 &&
-        angle == s16(psx_read_half(FORCED_HEADING + 4)))
-        return s16(psx_read_half(FORCED_HEADING + 6));
+    uint32_t extra = 0;
+    if (s16(psx_read_half(HEADING_MODE)) == 2) {
+        uint16_t held = psx_read_half(INPUT_STATE + 0x02);
+        extra = COST_SIDE_VIEW;
+        if (held & BTN_RIGHT) { angle = 0; extra++; }
+        if (held & BTN_LEFT)  { angle = 0x100; extra++; }
+    }
 
+    if (s16(psx_read_half(FORCED_HEADING + 8)) != 0) {
+        if (angle == s16(psx_read_half(FORCED_HEADING + 4))) {
+            *path = PATH_FORCED;
+            *cost = COST_FORCED + extra;
+            return s16(psx_read_half(FORCED_HEADING + 6));
+        }
+        extra += COST_FORCED_MISS;
+    }
+
+    *path = PATH_CAMERA;
+    *cost = COST_CAMERA + extra;
     return (angle + s16(psx_read_half(CAMERA_YAW)) + 0x80) & 0x1FF;
+}
+
+/* Cycle cost of the original, measured in A2_VERIFY runs, against the cost charged. */
+static uint64_t s_cyc_sum[PATH_COUNT], s_cyc_n[PATH_COUNT], s_model_sum[PATH_COUNT];
+static uint64_t s_cyc_min[PATH_COUNT] = { UINT64_MAX, UINT64_MAX, UINT64_MAX }, s_cyc_max[PATH_COUNT];
+static uint64_t s_mismatches;
+
+static uint64_t guest_now(void) { return psx_cycle_count + g_psx_cyc_batch; }
+
+static void print_verify_stats(void)
+{
+    static const char *names[PATH_COUNT] = { "no-input", "camera", "forced" };
+    fprintf(stderr, "a2.heading verify mismatches=%llu\n", (unsigned long long)s_mismatches);
+    for (int i = 0; i < PATH_COUNT; ++i)
+        if (s_cyc_n[i])
+            fprintf(stderr, "a2.heading cycles path=%s calls=%llu mean=%.2f min=%llu max=%llu charged=%.2f\n",
+                    names[i], (unsigned long long)s_cyc_n[i], (double)s_cyc_sum[i] / (double)s_cyc_n[i],
+                    (unsigned long long)s_cyc_min[i], (unsigned long long)s_cyc_max[i],
+                    (double)s_model_sum[i] / (double)s_cyc_n[i]);
 }
 
 /* Exact stick angle on the 512-unit circle, if the stick is past the dead zone. */
@@ -92,7 +146,9 @@ static int stick_angle(int32_t *angle_out)
 static int input_heading_override(CPUState *cpu)
 {
     int32_t input_angle;
-    int32_t result = input_heading_faithful(&input_angle);
+    uint32_t cost;
+    int path;
+    int32_t result = input_heading_faithful(&input_angle, &path, &cost);
     const int32_t faithful = result;
 
     int32_t fine_used = -1;
@@ -107,18 +163,34 @@ static int input_heading_override(CPUState *cpu)
     }
 
     if (s_verify) {
+        const uint64_t before = guest_now();
         func_override_call_original(cpu);
+        const uint64_t cycles = guest_now() - before;
+        s_cyc_sum[path] += cycles;
+        s_model_sum[path] += cost;
+        s_cyc_n[path]++;
+        if (cycles < s_cyc_min[path]) s_cyc_min[path] = cycles;
+        if (cycles > s_cyc_max[path]) s_cyc_max[path] = cycles;
         psx_mod_counter_add("a2.heading.calls", 1);
-        if ((int32_t)cpu->gpr[2] != faithful)
+        if ((int32_t)cpu->gpr[2] != faithful) {
             psx_mod_counter_add("a2.heading.mismatch", 1);
+            s_mismatches++;
+        }
+    } else {
+        psx_advance_cycles(cost);
     }
 
     s_last_input_angle = input_angle;
     s_last_result = result;
     s_last_fine = fine_used;
 
+    /* Same registers as the original on return: v0 = a0 = heading, a1 = input record,
+     * v1 = forced-heading record unless there was no input. */
     cpu->gpr[2] = (uint32_t)result;
     cpu->gpr[4] = (uint32_t)result;
+    cpu->gpr[5] = INPUT_STATE;
+    if (input_angle != -1)
+        cpu->gpr[3] = FORCED_HEADING;
     return 1;
 }
 
@@ -140,6 +212,7 @@ static void a2_register_input_overrides(void)
     /* First instructions of func_800A09C0: guards against another overlay being resident. */
     static const uint32_t guard[4] = { 0x3c028006u, 0x24450c40u, 0x8ca40010u, 0x2402ffffu };
     psx_mod_register_command("a2_heading", heading_command);
+    if (s_verify) atexit(print_verify_stats);
     func_override_add_guarded("a2.input.heading", 0x800A09C0u, input_heading_override,
-                              guard, 4, 40);
+                              guard, 4, FO_CREDIT_SELF);
 }

@@ -3,3 +3,15 @@
 PadInitDirect = 0x80047E98; // type:func
 PadGetState = 0x80045A84; // type:func
 PadInfoMode = 0x80045B50; // type:func
+// libgpu (PsyQ) - identified by their debug strings (GPU_printf / checkRECT names)
+ClearImage = 0x80033AD8; // type:func
+ClearImage2 = 0x80033B68; // type:func
+LoadImage = 0x80033C00; // type:func
+StoreImage = 0x80033C60; // type:func
+MoveImage = 0x80033CC0; // type:func
+DrawOTag = 0x80033F48; // type:func
+PutDrawEnv = 0x80033FB8; // type:func
+DrawOTagEnv = 0x80034078; // type:func
+// libetc - VSync(mode): reads the hblank root counter, mode<0 -> vblank count, mode 1 -> hblanks
+// since the last vblank, otherwise waits through v_wait (0x8003B340, the "VSync: timeout" owner)
+VSync = 0x8003B1C8; // type:func

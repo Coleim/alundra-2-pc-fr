@@ -9,10 +9,16 @@ Facts established from the disc and from a play session of the recompiled build.
 | `SLES_026.01` | `0x80017000` | `0x46800` | main program, entry `0x8003CFCC`, gp `0x8005D168` |
 | `GAME00.BIN` | `0x80084ED0` | `0xC4A18` | engine overlay |
 | `EVENT00.BIN` | `0x80084ED0` | `0x77000` | cutscene overlay, replaces GAME00 at the same address |
+| `GAME01/02/03.BIN` | `0x80084ED0` | `0x70888` / `0x76248` / `0x5FCF8` | same slot; code only in the first 35 / 29 / 25 KiB |
+| `PACK1.PAK` entries 1, 2, 11, 13, 17, 18, 21, 23-26, 30-35 | `0x80149AE8` | 4-45 KiB | 17 interchangeable code modules |
 
-`GAME01..03.BIN` are further overlays; their load address is still to be confirmed.
-Code from the `PAK` archives lands around `0x8014A000` (video player, executed at `0x80149B48`).
-The `PAK` and `GP` archives are otherwise data, loaded to varying addresses.
+The `GAME01-03` base was confirmed by the internal calls (all 481 / 398 / 329 `jal` resolve into the
+module or the main program). The `PACK1` base comes from code snapshots taken in a play session
+(entry 35 = file offset + `0x80119A4C`, entry 34 = file offset + `0x8011B988`, both `0x80149AE8`).
+The other `PAK` and `GP` archives are data, loaded to varying addresses (`symbols/cd_loads.json`).
+
+Function counts (splat, `tools/progress.py`): main 1103, GAME00 1264, EVENT00 204, GAME01 68,
+GAME02 36, GAME03 30, PACK1 modules 365; total 3070.
 
 ## Archives
 
@@ -44,6 +50,16 @@ Everything generated from the disc (`extracted/`, `decomp/`) is git-ignored.
   CTRL writes from `0x80046318`, frame ~25763, opening cutscene). The starvation watchdog killed it
   after ~320 s. Earlier runs passed the same point, so this is intermittent: the harness must
   detect a dead runtime and restart instead of waiting.
+- `0x80046318` is in `func_800462F8`, the libpad transfer start run from the VBlank interrupt
+  (`SIO_CTRL = 0x40` reset, mode `0xD`, baud `0x88`): the controller is polled every frame inside the
+  exception handler, so this write is a symptom (the game loop no longer advances), not the cause.
+- `tools/stall_hunt.py` runs several recorded sessions at once (`run_scenario.py --port`: own debug
+  port and memory-card folder per instance). A debug server that stops answering now counts as a stall
+  (threads sampled, `runtime_ctl.Stalled`); before, it was taken for a normal exit.
+- Launching several instances in the same second can fail at startup ("cannot publish state", mods):
+  the hunt staggers the starts.
+- 1:1 checks no longer use the TCP harness: `replay_check.py` and `replay_diff.py` replay a recorded
+  session without turbo commands or injected input; no stall in any replay so far.
 - The code around `0x80046300-0x80046910` in the main executable is the PsyQ low-level SIO/memory-card
   layer (`D_8005C52C` holds the SIO register base), not the controller reader.
 - `PadInit`-style wrappers around the BIOS `InitPad`/`StartPad` thunks live at `0x8003D524` and
@@ -68,3 +84,14 @@ function (static EXE, overlay or dirty RAM) for hand-written C, with `func_overr
 `func_override_guest_call`; an overlay guard exists (`func_override_add_guarded`). Limit:
 `FO_MAX_OVERRIDES = 128`. Once more functions are rewritten the limit must be raised
 (fork the framework).
+
+The runtime counts guest cycles per instruction (I-cache, load interlocks). A replacement must charge
+the cycles of the path the original would take (`FO_CREDIT_SELF` + `psx_advance_cycles`), and leave
+the same registers as the original; the rules and tools are in `docs/VERIFICATION.md`.
+
+## libetc timing
+
+`VSync(mode)` is `0x8003B1C8`: it reads the hblank root counter; `mode < 0` returns the vblank count,
+`mode == 1` the hblanks since the last vblank, otherwise it waits through `v_wait` (`0x8003B340`, the
+owner of the "VSync: timeout" string). GAME00 stores `VSync(1)` once per frame at `0x800FA7F4`, only
+shown by a debug performance overlay (`func_80087E34`, gated by the byte `0x8005D170`).

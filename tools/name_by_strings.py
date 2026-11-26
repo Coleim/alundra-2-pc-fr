@@ -18,7 +18,7 @@ STRING_TO_NAME = [
     ("SetGrapQue(%d)", "SetGraphQue"), ("DrawSyncCallback(%08x)", "DrawSyncCallback"),
     ("SetDispMask(%d)", "SetDispMask"), ("DrawSync(%d)", "DrawSync"),
     ("ClearOTagR(%08x", "ClearOTagR"), ("ClearOTag(%08x", "ClearOTag"),
-    ("VSync: timeout", "VSync"), ("MDEC_rest:bad option", "MDEC_rest"),
+    ("VSync: timeout", "v_wait"), ("MDEC_rest:bad option", "MDEC_rest"),
     ("CD_sync", "CD_sync"), ("CD_ready", "CD_ready"), ("CD_init:", "CD_init"),
     ("CD_datasync", "CD_datasync"), ("DsSearchFile: searching", "DsSearchFile"),
     ("DS_newmedia: Read error", "DS_newmedia"), ("libmcrd: event overflow", "mcrd_event_overflow"),

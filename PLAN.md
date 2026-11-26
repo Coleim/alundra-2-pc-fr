@@ -1,6 +1,6 @@
 # PLAN — Alundra 2 (version française, SLES-02601) : vrai portage PC
 
-Dernière mise à jour : 26 novembre 2026.
+Dernière mise à jour : 26 novembre 2026 (fin de la phase 1).
 Suivi chiffré : `python tools/progress.py` · détails techniques : `docs/DECOMP_NOTES.md` · journal : `docs/PROGRESS.md`.
 
 Légende : `[x]` fait · `[~]` en cours ou partiel · `[ ]` à faire.
@@ -50,9 +50,9 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 
 | Niveau | Quoi | Outil |
 |---|---|---|
-| Fonction | l'original et la version réécrite donnent le même résultat sur les mêmes appels | mode `A2_VERIFY=1` (exécution en parallèle + compteurs) |
-| Scène | mêmes boutons → même état du jeu (hash de la mémoire à des points de contrôle) | rejeu d'entrées enregistrées |
-| Image | mêmes primitives graphiques envoyées au GPU par image | journal des commandes GPU, comparé image par image |
+| Fonction | l'original et la version réécrite donnent le même résultat sur les mêmes appels, et le même coût en cycles | mode `A2_VERIFY=1` (exécution en parallèle + compteurs + mesure des cycles) |
+| Scène | mêmes boutons → même état du jeu (hash de la mémoire à des points de contrôle) | rejeu d'une session de référence : `tools/replay_check.py` (verdict `in_sync`) |
+| Image | mêmes primitives graphiques envoyées au GPU par image, même VRAM | journal GPU de `src/a2_diag.c`, comparé image par image par `tools/replay_diff.py` |
 | Son | mêmes écritures de la puce son et mêmes événements musicaux | journal SPU/SEQ |
 | Jeu complet | partie du début à la fin, sauvegardes compatibles | parcours complet + sauvegardes de l'original chargées dans le port |
 
@@ -67,11 +67,11 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 - [x] Dépôt Git `Coleim/alundra-2-pc-fr`, identité Gmail, `main` poussé jusqu'aux scripts d'emballage.
 - [~] Test sur le Dell G15 : saccades constatées (image et surtout son). Causes probables : interpréteur pour le code chargé depuis le CD, fichiers de capture, rendu 4x sur puce intégrée. **Abandonné au profit du vrai portage** ; sera résolu par la phase 4.
 
-### Phase 1 — Cartographie et outillage  `[~]` presque terminée  (M)
+### Phase 1 — Cartographie et outillage  `[x]` terminée  (M)
 - [x] Extraction complète du disque (`tools/extract_disc.py`), archives `PAK`/`GP` découpées.
-- [x] Carte des chargements : programme principal `0x80017000` ; `GAME00`/`EVENT00` `0x80084ED0` (modes exclusifs).
-- [x] Découpage `splat` : programme principal, `GAME00`, `EVENT00` — 2 571 fonctions.
-- [x] Noms automatiques : 38 appels BIOS, 17 fonctions PsyQ (via messages de debug), 3 fonctions libpad.
+- [x] Carte des chargements : programme principal `0x80017000` ; `GAME00`/`EVENT00`/`GAME01-03` `0x80084ED0` (modules exclusifs) ; 17 modules de code de `PACK1.PAK` à `0x80149AE8` ; carte des lectures CD d'une partie (`symbols/cd_loads.json`).
+- [x] Découpage `splat` : programme principal, `GAME00-03`, `EVENT00`, modules de `PACK1` — 3 070 fonctions.
+- [x] Noms automatiques : 38 appels BIOS, 17 fonctions PsyQ (via messages de debug), libpad, points d'entrée libgpu (`DrawOTag`, `LoadImage`…), `VSync`.
 - [x] Chaîne de suivi de progression (`tools/progress.py`).
 - [x] Harnais de test pilotable (`run_scenario.py`, `runtime_ctl.py`, `play_to_gameplay.py`, détection de blocage).
 - [x] Chaîne de la manette comprise (tampons, structures, angle de direction, cap).
@@ -80,8 +80,8 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 - [x] Code caché dans les `PAK` (lecteur vidéo vers `0x8014A000`, autres ?) : l'inventorier et le découper (M).
 - [x] Inventaire des formats de données : tables des `PAK`/`GP`, textures (TIM/maison), modèles, cartes, animations, scripts de cinématique, sons VAB/SEQ, textes (M à L).
 - [x] Rejeu d'entrées : enregistrer des parcours de référence (boutons par image) avec points de contrôle (M).
-- [ ] Journal des commandes GPU par image, pour comparer le rendu (M).
-- [ ] Résoudre le blocage intermittent du harnais en mode accéléré (cartes mémoire, SIO) (S–M).
+- [x] Journal des commandes GPU par image, pour comparer le rendu (M) : `src/a2_diag.c` (tables d'ordre, environnements de dessin, transferts VRAM, empreinte de la VRAM, RAM par page, cycles) et `tools/replay_diff.py` ; méthode dans `docs/VERIFICATION.md`.
+- [x] Blocage intermittent du harnais en mode accéléré (S–M) : détection complète (plus d'image qui avance **ou** serveur de débogage muet), piles des threads relevées, relance automatique ; instances parallèles isolées ; `tools/stall_hunt.py` ; 13 sessions de suite sans blocage. Les vérifications 1:1 passent par le rejeu, sans le harnais accéléré. Cause non reproduite ; pistes : correctifs SIO/IRQ du framework en amont (à reprendre lors du fork, phase 3).
 
 ### Phase 2 — Bibliothèque PsyQ : identifier et nommer  `[~]`  (L)
 Les fonctions de la bibliothèque Sony sont **déjà écrites publiquement** (projet de décompilation PsyQ) : on les reconnaît, on les nomme, on ne les réécrit pas à la main.
@@ -92,7 +92,7 @@ Les fonctions de la bibliothèque Sony sont **déjà écrites publiquement** (pr
 
 ### Phase 3 — Réécriture du jeu en C (mode mixte)  `[~]` démarrée  (XL)
 Environ 2 500 fonctions du jeu à réécrire. Ordre proposé, du plus utile au plus lourd :
-- [x] 1re fonction : `func_800A09C0` (cap du joueur) — vérifiée 266 appels, 0 différence ; version analogique vérifiée à 11 angles *(l'extension analogique appartient à la phase 7, voir plus bas : elle reste désactivée dans la 1.0)*.
+- [x] 1re fonction : `func_800A09C0` (cap du joueur) — 7 857 appels comparés, 0 différence ; **rejeu de la session de référence `in_sync` au bit près** avec la fonction réécrite seule (mêmes registres, même coût en cycles) ; version analogique vérifiée à 11 angles *(l'extension analogique appartient à la phase 7, voir plus bas : elle reste désactivée dans la 1.0)*.
 - [ ] Couche entrées complète : mise à jour des manettes, direction, boutons, répétition, vibration (`0x8002A5F0` et voisines) (M).
 - [ ] Boucle principale et gestionnaire d'état du jeu / changement de mode (GAME00 ↔ EVENT00 ↔ GAME01-03) (M).
 - [ ] Chargeur de fichiers et de modules (lecture CD, décompression, `PAK`/`GP`) (L).
@@ -171,7 +171,7 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 | Code compilé de l'époque (compilateur PsyQ) difficile à relire | fonctions lentes à comprendre | décompilateur MIPS, comparaison automatique, tests d'équivalence |
 | Limite de 128 remplacements simultanés | bloque le mode mixte au-delà | fork du framework ou passage direct à la phase 4 |
 | Précision du son (réverbération, séquences) | écart audible avec l'original | journaux SPU/SEQ comparés à l'original |
-| Blocage intermittent du harnais (cartes mémoire) | tests peu fiables | détection et relance déjà en place ; cause à trouver |
+| Blocage intermittent du harnais (cartes mémoire) | tests peu fiables | détection complète et relance ; vérifications par rejeu, sans le harnais ; cause non reproduite (13 sessions sans blocage) |
 | Dépendance au Dell G15 pour le test Windows | boucle de test plus lente | compilation croisée depuis le Mac, zip à tester |
 | Aspect juridique (code dérivé de celui d'Activision/Sony) | retrait possible d'un dépôt public | aucune donnée du jeu dans le dépôt ; visibilité à décider avant publication |
 
@@ -179,10 +179,9 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 
 ## 6. État actuel (résumé)
 
-- **Terminé :** v1 jouable (Mac/Windows), disque extrait, code cartographié et découpé, noms de base, harnais de test, chaîne manette comprise, première fonction réécrite et vérifiée.
-- **Chiffres :** 2 571 fonctions ; 60 nommées ; **1 réécrite** (0,04 %).
+- **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé (programme, 5 modules `GAME`/`EVENT`, 17 modules de `PACK1`), formats inventoriés, noms de base, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; première fonction réécrite, **identique au bit près** sur la session de référence.
+- **Chiffres :** 3 070 fonctions ; 69 nommées ; **1 réécrite** (0,03 %).
 - **Prochaine étape recommandée (1:1 d'abord) :**
-  1. Terminer la phase 1 : `GAME01-03`, code des `PAK`, rejeu d'entrées, journal GPU.
-  2. Reconnaissance des fonctions PsyQ par signatures (phase 2).
-  3. Réécriture de la couche entrées complète, de la boucle principale et du chargeur (phase 3).
-  4. Démarrer les modules natifs les plus simples (fichiers, entrées, cartes mémoire) pour réduire peu à peu la dépendance à la recompilation (phase 4).
+  1. Reconnaissance des fonctions PsyQ par signatures (phase 2).
+  2. Réécriture de la couche entrées complète, de la boucle principale et du chargeur (phase 3).
+  3. Démarrer les modules natifs les plus simples (fichiers, entrées, cartes mémoire) pour réduire peu à peu la dépendance à la recompilation (phase 4).

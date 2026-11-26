@@ -18,6 +18,9 @@ def main():
     ap.add_argument("--game", default="game.toml")
     ap.add_argument("--env", action="append", default=[], help="KEY=VALUE for the runtime")
     ap.add_argument("--verdict", default="decomp-build/verdict.json")
+    ap.add_argument("--log", help="save the runtime output (stdout and stderr) here")
+    ap.add_argument("--isolate", type=int, metavar="PORT",
+                    help="own debug port and memory-card folder, to run next to other instances")
     a = ap.parse_args()
     env = dict(os.environ, PSX_REPLAY_EXIT_AT_END="1")
     for kv in a.env:
@@ -26,9 +29,14 @@ def main():
     if os.path.exists(a.verdict):
         os.remove(a.verdict)
     os.makedirs(os.path.dirname(a.verdict), exist_ok=True)
-    p = subprocess.run([a.exe, "--headless", "--game", os.path.abspath(a.game), "--replay", a.replay,
-                        "--replay-verdict", a.verdict, "--replay-fast"], env=env,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cmd = [a.exe, "--headless", "--game", os.path.abspath(a.game), "--replay", a.replay,
+           "--replay-verdict", a.verdict, "--replay-fast"]
+    if a.isolate:
+        cards = os.path.abspath(os.path.join(os.path.dirname(a.verdict), f"cards-{a.isolate}"))
+        os.makedirs(cards, exist_ok=True)
+        cmd += ["--debug-port", str(a.isolate), "--memcard-dir", cards]
+    out = open(a.log, "w") if a.log else subprocess.DEVNULL
+    p = subprocess.run(cmd, env=env, stdout=out, stderr=subprocess.STDOUT if a.log else subprocess.DEVNULL)
     try:
         v = json.load(open(a.verdict))
     except Exception as e:

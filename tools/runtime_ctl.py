@@ -34,6 +34,15 @@ class Runtime:
         self.on_stall = on_stall
 
     def send(self, obj, timeout=60.0):
+        try:
+            return self._send(obj, timeout)
+        except socket.timeout:
+            # The debug server answers from the emulation side: no answer means it is stuck.
+            if self.on_stall:
+                self.on_stall(-1)
+            raise Stalled(f"debug server did not answer {obj.get('cmd')!r} within {timeout:.0f}s")
+
+    def _send(self, obj, timeout):
         s = socket.create_connection(self.addr, timeout=timeout)
         try:
             s.sendall((json.dumps(obj) + "\n").encode())
