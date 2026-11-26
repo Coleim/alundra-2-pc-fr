@@ -17,8 +17,8 @@ MENU_ROWS = (112, 130, 148)   # title screen: Demarrer, Continuer, Options
 def _cursor_pixels(img, row):
     px = img.load()
     n = 0
-    for y in range(row - 5, row + 6):
-        for x in range(100, 123):
+    for y in range(max(row - 5, 0), min(row + 6, img.height)):
+        for x in range(100, min(123, img.width)):
             r, g, b = px[x, y]
             if (r > 150 and g < 90 and b < 90) or (r > 215 and g > 215 and b > 215):
                 n += 1
@@ -41,7 +41,7 @@ def menu_cursor_row(rt, samples=6, gap=7):
 def menu_arrow_y(img):
     """Mean y of the red menu cursor (x 95..125), or None (only while it is not blinking)."""
     px = img.load()
-    ys = [y for y in range(img.height) for x in range(95, 125)
+    ys = [y for y in range(img.height) for x in range(95, min(125, img.width))
           if px[x, y][0] > 190 and px[x, y][1] < 70 and px[x, y][2] < 70]
     return sum(ys) / len(ys) if len(ys) > 6 else None
 
@@ -49,7 +49,7 @@ def menu_arrow_y(img):
 def hud_present(img):
     """True when the in-game HUD (gold hearts frame, top-left) is on screen."""
     px = img.load()
-    gold = sum(1 for y in range(4, 44) for x in range(4, 70)
+    gold = sum(1 for y in range(4, min(44, img.height)) for x in range(4, min(70, img.width))
                if px[x, y][0] > 150 and 90 < px[x, y][1] < 200 and px[x, y][2] < 90)
     return gold > 60
 
