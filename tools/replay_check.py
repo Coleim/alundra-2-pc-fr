@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Play a recorded replay and print the framework's verdict (in-sync / diverged / ...).
+
+  python3 tools/replay_check.py saves/replays/<file>.psxrpl [--exe build-dev/alundra_2] [--env A2_OVERRIDES=0]
+Exit status: 0 in sync, 3 diverged, 4 not played, other = failure.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("replay")
+    ap.add_argument("--exe", default="build-dev/alundra_2")
+    ap.add_argument("--game", default="game.toml")
+    ap.add_argument("--env", action="append", default=[], help="KEY=VALUE for the runtime")
+    ap.add_argument("--verdict", default="decomp-build/verdict.json")
+    a = ap.parse_args()
+    env = dict(os.environ, PSX_REPLAY_EXIT_AT_END="1")
+    for kv in a.env:
+        k, _, v = kv.partition("=")
+        env[k] = v
+    if os.path.exists(a.verdict):
+        os.remove(a.verdict)
+    os.makedirs(os.path.dirname(a.verdict), exist_ok=True)
+    p = subprocess.run([a.exe, "--headless", "--game", os.path.abspath(a.game), "--replay", a.replay,
+                        "--replay-verdict", a.verdict, "--replay-fast"], env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        v = json.load(open(a.verdict))
+    except Exception as e:
+        print(f"no verdict ({e}); runtime exit {p.returncode}")
+        return p.returncode or 1
+    keys = ("verdict", "result", "status", "frames", "frame", "diverged_at", "first_divergence", "reason")
+    print("verdict:", {k: v[k] for k in keys if k in v} or {k: str(v)[:80] for k, v in list(v.items())[:8]})
+    print("runtime exit", p.returncode, {0: "in sync", 3: "DIVERGED", 4: "not played"}.get(p.returncode, ""))
+    return p.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

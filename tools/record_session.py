@@ -19,7 +19,6 @@ WALK = ["UP", "RIGHT", "UP+RIGHT", "DOWN", "LEFT", "DOWN+LEFT", "UP+LEFT", "DOWN
 def main(rt):
     try:
         play_to_gameplay.main(rt)
-        play_to_gameplay.ensure_controllable(rt)
         while True:                                  # keep walking until the budget ends the run
             for combo in WALK:
                 rt.hold(combo)

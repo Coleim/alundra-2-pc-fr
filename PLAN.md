@@ -76,10 +76,10 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 - [x] Harnais de test pilotable (`run_scenario.py`, `runtime_ctl.py`, `play_to_gameplay.py`, détection de blocage).
 - [x] Chaîne de la manette comprise (tampons, structures, angle de direction, cap).
 - [x] Mécanisme de remplacement de fonction compris (`func_override`, limite de 128 par défaut).
-- [ ] `GAME01.BIN`, `GAME02.BIN`, `GAME03.BIN` : adresse de chargement et configuration `splat` (S).
-- [ ] Code caché dans les `PAK` (lecteur vidéo vers `0x8014A000`, autres ?) : l'inventorier et le découper (M).
-- [ ] Inventaire des formats de données : tables des `PAK`/`GP`, textures (TIM/maison), modèles, cartes, animations, scripts de cinématique, sons VAB/SEQ, textes (M à L).
-- [ ] Rejeu d'entrées : enregistrer des parcours de référence (boutons par image) avec points de contrôle (M).
+- [x] `GAME01.BIN`, `GAME02.BIN`, `GAME03.BIN` : adresse de chargement et configuration `splat` (S).
+- [x] Code caché dans les `PAK` (lecteur vidéo vers `0x8014A000`, autres ?) : l'inventorier et le découper (M).
+- [x] Inventaire des formats de données : tables des `PAK`/`GP`, textures (TIM/maison), modèles, cartes, animations, scripts de cinématique, sons VAB/SEQ, textes (M à L).
+- [x] Rejeu d'entrées : enregistrer des parcours de référence (boutons par image) avec points de contrôle (M).
 - [ ] Journal des commandes GPU par image, pour comparer le rendu (M).
 - [ ] Résoudre le blocage intermittent du harnais en mode accéléré (cartes mémoire, SIO) (S–M).
 
