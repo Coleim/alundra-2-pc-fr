@@ -1,3 +1,4 @@
+/* REWRITTEN: func_800A09C0 */
 /*
  * Player input heading (func_800A09C0 in GAME00.BIN, loaded at 0x80084ED0).
  *
