@@ -1,6 +1,6 @@
 # PLAN — Alundra 2 (version française, SLES-02601) : vrai portage PC
 
-Dernière mise à jour : 26 novembre 2026 (fin de la phase 1).
+Dernière mise à jour : 26 novembre 2026 (fin de la phase 2).
 Suivi chiffré : `python tools/progress.py` · détails techniques : `docs/DECOMP_NOTES.md` · journal : `docs/PROGRESS.md`.
 
 Légende : `[x]` fait · `[~]` en cours ou partiel · `[ ]` à faire.
@@ -83,15 +83,15 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 - [x] Journal des commandes GPU par image, pour comparer le rendu (M) : `src/a2_diag.c` (tables d'ordre, environnements de dessin, transferts VRAM, empreinte de la VRAM, RAM par page, cycles) et `tools/replay_diff.py` ; méthode dans `docs/VERIFICATION.md`.
 - [x] Blocage intermittent du harnais en mode accéléré (S–M) : détection complète (plus d'image qui avance **ou** serveur de débogage muet), piles des threads relevées, relance automatique ; instances parallèles isolées ; `tools/stall_hunt.py` ; 13 sessions de suite sans blocage. Les vérifications 1:1 passent par le rejeu, sans le harnais accéléré. Cause non reproduite ; pistes : correctifs SIO/IRQ du framework en amont (à reprendre lors du fork, phase 3).
 
-### Phase 2 — Bibliothèque PsyQ : identifier et nommer  `[~]`  (L)
-Les fonctions de la bibliothèque Sony sont **déjà écrites publiquement** (projet de décompilation PsyQ) : on les reconnaît, on les nomme, on ne les réécrit pas à la main.
-- [~] Nommer les bibliothèques : libgpu, libgte, libgs, libcd, libspu/libsnd, libpress, libpad, libmcrd, libapi, libc (partiellement fait : 60 noms sur 2 571).
-- [ ] Reconnaissance par signatures (octets des fonctions de la lib PsyQ) pour nommer des centaines de fonctions d'un coup (M).
-- [ ] Séparer clairement « bibliothèque Sony » (remplacée par la couche 2) de « code du jeu » (réécrit en couche 3) (M).
-- Estimation : le programme principal contient environ 1 100 fonctions, dont une large part est de la bibliothèque.
+### Phase 2 — Bibliothèque PsyQ : identifier et nommer  `[x]` terminée  (L)
+Les fonctions de la bibliothèque Sony sont **déjà écrites publiquement** (projet de décompilation PsyQ) : on les reconnaît, on les nomme, on ne les réécrit pas à la main. Détails : `docs/LIBRARIES.md`.
+- [x] Reconnaissance par signatures (`tools/psyq_sigs.py`, signatures publiques lab313ru, clonées hors du dépôt) : **149 fichiers objets, 547 fonctions, 414 noms** en une vingtaine de secondes ; kit **PsyQ 4.5** environ.
+- [x] Bibliothèques nommées : libc2, libpress, libgpu, libgte, libcd, libds, libetc, libapi, libmath, libsn, libmcrd, libcard, libpad (+ `SsGetNck` de libsnd). Pas de libgs ni de libspu standard. Contrôle : 24 noms existants confirmés, 2 noms devinés corrigés.
+- [x] Séparation « bibliothèque » / « code du jeu » (`tools/progress.py`) : **2 378 fonctions de jeu à réécrire** (phase 3), **694 fonctions de bibliothèque à remplacer** (phase 4). Aucune bibliothèque dans les modules `GAME`/`EVENT`/`PACK1` : tout y est du code du jeu.
+- [x] Découverte : la fin du programme (105 fonctions, `0x80048A78`-`0x800521E0`) est un **pilote son propre au jeu** (accès direct à la puce son), ni libspu ni libsnd : à étudier avec le moteur son de la phase 4.
 
 ### Phase 3 — Réécriture du jeu en C (mode mixte)  `[~]` démarrée  (XL)
-Environ 2 500 fonctions du jeu à réécrire. Ordre proposé, du plus utile au plus lourd :
+**2 378 fonctions** du jeu à réécrire (programme 411, `GAME00` 1 264, `EVENT00` 204, `GAME01-03` 134, `PACK1` 365). Ordre proposé, du plus utile au plus lourd :
 - [x] 1re fonction : `func_800A09C0` (cap du joueur) — 7 857 appels comparés, 0 différence ; **rejeu de la session de référence `in_sync` au bit près** avec la fonction réécrite seule (mêmes registres, même coût en cycles) ; version analogique vérifiée à 11 angles *(l'extension analogique appartient à la phase 7, voir plus bas : elle reste désactivée dans la 1.0)*.
 - [ ] Couche entrées complète : mise à jour des manettes, direction, boutons, répétition, vibration (`0x8002A5F0` et voisines) (M).
 - [ ] Boucle principale et gestionnaire d'état du jeu / changement de mode (GAME00 ↔ EVENT00 ↔ GAME01-03) (M).
@@ -167,7 +167,7 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 
 | Risque | Effet | Parade |
 |---|---|---|
-| Volume de la réécriture (≈ 2 500 fonctions) | durée de plusieurs mois | travail par lots, outils de nommage automatique, vérification automatique, priorité aux parties qui bloquent le reste |
+| Volume de la réécriture (2 378 fonctions) | durée de plusieurs mois | travail par lots, outils de nommage automatique, vérification automatique, priorité aux parties qui bloquent le reste |
 | Code compilé de l'époque (compilateur PsyQ) difficile à relire | fonctions lentes à comprendre | décompilateur MIPS, comparaison automatique, tests d'équivalence |
 | Limite de 128 remplacements simultanés | bloque le mode mixte au-delà | fork du framework ou passage direct à la phase 4 |
 | Précision du son (réverbération, séquences) | écart audible avec l'original | journaux SPU/SEQ comparés à l'original |
@@ -180,8 +180,8 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 ## 6. État actuel (résumé)
 
 - **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé (programme, 5 modules `GAME`/`EVENT`, 17 modules de `PACK1`), formats inventoriés, noms de base, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; première fonction réécrite, **identique au bit près** sur la session de référence.
-- **Chiffres :** 3 070 fonctions ; 69 nommées ; **1 réécrite** (0,03 %).
+- **Phase 2 terminée :** bibliothèques Sony reconnues par signature, code du jeu et bibliothèques séparés.
+- **Chiffres :** 3 072 fonctions = **2 378 de jeu** (1 réécrite, 0,04 %) + 694 de bibliothèque (547 reconnues) ; 457 nommées.
 - **Prochaine étape recommandée (1:1 d'abord) :**
-  1. Reconnaissance des fonctions PsyQ par signatures (phase 2).
-  2. Réécriture de la couche entrées complète, de la boucle principale et du chargeur (phase 3).
-  3. Démarrer les modules natifs les plus simples (fichiers, entrées, cartes mémoire) pour réduire peu à peu la dépendance à la recompilation (phase 4).
+  1. Réécriture de la couche entrées complète, de la boucle principale et du chargeur (phase 3).
+  2. Démarrer les modules natifs les plus simples (fichiers, entrées, cartes mémoire) pour réduire peu à peu la dépendance à la recompilation (phase 4).

@@ -17,8 +17,9 @@ module or the main program). The `PACK1` base comes from code snapshots taken in
 (entry 35 = file offset + `0x80119A4C`, entry 34 = file offset + `0x8011B988`, both `0x80149AE8`).
 The other `PAK` and `GP` archives are data, loaded to varying addresses (`symbols/cd_loads.json`).
 
-Function counts (splat, `tools/progress.py`): main 1103, GAME00 1264, EVENT00 204, GAME01 68,
-GAME02 36, GAME03 30, PACK1 modules 365; total 3070.
+Function counts (splat, `tools/progress.py`): main 1105, GAME00 1264, EVENT00 204, GAME01 68,
+GAME02 36, GAME03 30, PACK1 modules 365; total 3072. Game code 2378, PsyQ library 694 (main
+executable only, from `0x80031258`; 547 functions recognised by signature, see `docs/LIBRARIES.md`).
 
 ## Archives
 
@@ -37,6 +38,8 @@ The CD log shows each data sector DMA preceded by a 12-byte header read, and the
     python3 tools/extract_disc.py alundra.cue --out extracted
     python3 tools/name_bios_stubs.py extracted/files/SLES_026.01 \
         --names psxrecomp/recompiler/src/bios_call_names.cpp --out symbols/bios_thunks.txt
+    git clone --depth 1 https://github.com/lab313ru/psx_psyq_signatures ../psx_psyq_signatures
+    python3 tools/psyq_sigs.py
     python3 tools/build_symbols.py
     python -m splat split config/main.yaml
 

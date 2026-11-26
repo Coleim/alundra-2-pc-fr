@@ -17,8 +17,14 @@ Priority: a 1:1 port first (release 1.0), improvements after (see `PLAN.md`).
 - First rewrite: `src/input_override.c` replaces `func_800A09C0` (player heading), faithful port with
   the original's register state and cycle cost; analog extension kept for phase 7 (`A2_ANALOG=0`).
 
-## Next (phase 2)
-- Identify the PsyQ libraries by signatures; separate library code from game code.
+## Phase 2 (PsyQ libraries) - done
+- `tools/psyq_sigs.py` (public lab313ru signatures, cloned next to the repo): 149 objects,
+  547 functions, 414 names; SDK ~4.5. Details and map: `docs/LIBRARIES.md`.
+- `tools/progress.py` splits game code (2378 functions, phase 3) from library code (694, phase 4).
+- The end of the main executable (105 functions) is a game-specific sound driver, not libspu/libsnd.
+
+## Next (phase 3)
+- Input layer, main loop / mode manager, file and module loader.
 
 ## Not part of the real port
 `build-release`, `dist/` (v1 recompilation packages, with disc, never publish), `scripts/package_*.sh`.

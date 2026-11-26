@@ -15,3 +15,5 @@ DrawOTagEnv = 0x80034078; // type:func
 // libetc - VSync(mode): reads the hblank root counter, mode<0 -> vblank count, mode 1 -> hblanks
 // since the last vblank, otherwise waits through v_wait (0x8003B340, the "VSync: timeout" owner)
 VSync = 0x8003B1C8; // type:func
+// libgte - below the signature threshold: `ctc2 $a0, $26` (H, projection distance)
+SetGeomScreen = 0x80037AD8; // type:func
