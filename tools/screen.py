@@ -58,3 +58,24 @@ def mean_brightness(img):
     px = img.load()
     n = img.width * img.height
     return sum(sum(px[x, y]) for y in range(0, img.height, 4) for x in range(0, img.width, 4)) / (n / 16) / 3
+
+
+def screen_kind(img):
+    """Coarse classification of the French build's screens: 'load', 'difficulty', 'title' or '?'."""
+    px = img.load()
+    total = brown = white_band = 0
+    for y in range(0, img.height, 4):
+        for x in range(0, img.width, 4):
+            r, g, b = px[x, y]
+            total += 1
+            if 80 < r < 170 and r > g + 25 and g > b + 5:
+                brown += 1
+    for y in range(50, min(66, img.height)):
+        for x in range(60, min(260, img.width)):
+            if min(px[x, y]) > 200:
+                white_band += 1
+    if brown / max(total, 1) > 0.30:
+        return "load"
+    if white_band > 120 and mean_brightness(img) < 90:
+        return "difficulty"
+    return "title"
