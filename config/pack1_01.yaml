@@ -1,0 +1,40 @@
+name: PACK1_01
+options:
+  basename: pack1_01
+  target_path: extracted/archives/PACK1/0001.bin
+  elf_path: decomp-build/pack1_01.elf
+  base_path: ..
+  platform: psx
+  compiler: PSYQ
+  asm_path: decomp/asm/pack1_01
+  src_path: src/pack1_01
+  build_path: decomp-build
+  ld_script_path: decomp-build/pack1_01.ld
+  ld_dependencies: True
+  find_file_boundaries: False
+  gp_value: 0x8005D168
+  o_as_suffix: True
+  use_legacy_include_asm: False
+  section_order: [".rodata", ".text", ".data", ".bss"]
+  symbol_addrs_path:
+    - symbols/main_symbols.txt
+    - symbols/pack1_01_symbols.txt
+  reloc_addrs_path:
+    - symbols/pack1_01_relocs.txt
+  undefined_funcs_auto_path: decomp-build/pack1_01_undefined_funcs_auto.txt
+  undefined_syms_auto_path: decomp-build/pack1_01_undefined_syms_auto.txt
+  subalign: 2
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+segments:
+  - name: pack1_01
+    type: code
+    start: 0x0
+    vram: 0x80149ae8
+    subsegments:
+      - [0x0, data, head]
+      - [0x64, asm, code]
+      - [0x206c, data, tail]
+  - [0x20e8]

@@ -10,7 +10,7 @@ import sys
 TEMPLATE = """name: {name}
 options:
   basename: {lc}
-  target_path: extracted/files/{name}.BIN
+  target_path: {src}
   elf_path: decomp-build/{lc}.elf
   base_path: ..
   platform: psx
@@ -53,10 +53,12 @@ def main():
     ap.add_argument("name")
     ap.add_argument("--vram", type=lambda x: int(x, 0), required=True)
     ap.add_argument("--code", type=lambda x: int(x, 0), nargs=2, required=True, metavar=("LO", "HI"))
+    ap.add_argument("--src", help="file to split (default extracted/files/<NAME>.BIN)")
     ap.add_argument("--root", default=".")
     a = ap.parse_args()
     lc = a.name.lower()
-    size = os.path.getsize(os.path.join(a.root, "extracted/files", a.name + ".BIN"))
+    src = a.src or f"extracted/files/{a.name}.BIN"
+    size = os.path.getsize(os.path.join(a.root, src))
     lo, hi = a.code
     subs = []
     if lo > 0:
@@ -65,7 +67,7 @@ def main():
     if hi < size:
         subs.append(f"      - [{hi:#x}, data, tail]")
     open(os.path.join(a.root, "config", lc + ".yaml"), "w").write(
-        TEMPLATE.format(name=a.name, lc=lc, vram=a.vram, subs="\n".join(subs), size=size))
+        TEMPLATE.format(name=a.name, lc=lc, src=src, vram=a.vram, subs="\n".join(subs), size=size))
     for suffix in ("_symbols.txt", "_relocs.txt"):
         p = os.path.join(a.root, "symbols", lc + suffix)
         if not os.path.exists(p):
