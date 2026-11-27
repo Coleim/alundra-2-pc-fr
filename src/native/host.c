@@ -17,6 +17,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "cd.h"
 #include "disc.h"
@@ -105,9 +110,27 @@ static void trim_slash(char *p)
     while (n > 1 && (p[n - 1] == '/' || p[n - 1] == '\\')) p[--n] = 0;
 }
 
+/* without a terminal (double-click), messages go to alundra2.log in the user's folder */
+static void open_log(const char *pref)
+{
+    const char *forced = getenv("A2_LOG");
+#ifdef _WIN32
+    const int terminal = GetStdHandle(STD_ERROR_HANDLE) != NULL && GetStdHandle(STD_ERROR_HANDLE) != INVALID_HANDLE_VALUE &&
+                         GetFileType(GetStdHandle(STD_ERROR_HANDLE)) != FILE_TYPE_UNKNOWN;
+#else
+    const int terminal = isatty(2);
+#endif
+    if (!forced && (terminal || !pref || opt.headless)) return;
+    char path[1100];
+    snprintf(path, sizeof path, "%salundra2.log", pref ? pref : "./");
+    if (!freopen(forced ? forced : path, "w", stderr)) return;
+    setvbuf(stderr, NULL, _IOLBF, 0);
+}
+
 static void choose_dirs(void)
 {
     char *pref = SDL_GetPrefPath(NULL, "alundra2-fr");
+    open_log(pref);
     const char *base = SDL_GetBasePath();
     char beside[1024] = "";
     if (base) snprintf(beside, sizeof beside, "%sdata", base);

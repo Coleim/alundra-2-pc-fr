@@ -186,3 +186,18 @@ verticaux diffèrent). Chaque module est donc vérifié séparément contre la r
 polygones n'arrondit pas toujours comme la référence (±1 sur une partie des pixels ombrés), et
 quelques texels de rectangles coupés par le bord de l'écran. `tools/gpucheck` permet d'essayer
 des variantes (`--knob`) et de suivre un pixel (`--pixel x,y`).
+
+### La bibliothèque PsyQ traduite
+
+Le moteur autonome exécute la bibliothèque PsyQ traduite par `tools/a2lift.py` (sauf les
+fonctions remplacées par du code natif). Elle a été rejouée dans le framework sur toute la
+session de référence (`A2_LIFT_LIB=1`, avec les fonctions que le traceur surveille — `VSync`,
+`DrawOTag`, `LoadImage`... — laissées d'origine pour que le traceur les voie) :
+
+- **journal GPU et VRAM identiques sur les 14 644 images de jeu** ;
+- RAM : différences dans les zones de temps déjà connues (tampons de la manette `0x80082000`,
+  pile `0x801FF000`, compteur de performance `0x800FA000`, variables de `VSync` `0x8005A000`),
+  plus quelques pages ponctuelles (`0x800B9000` : 347 images, `0x8007F000` : 2,
+  `0x8014B000` et `0x80153000` : 1) ;
+- écart d'horloge entre -411 et +434 cycles dans une image, +39 en fin de session : il ne
+  s'accumule pas.

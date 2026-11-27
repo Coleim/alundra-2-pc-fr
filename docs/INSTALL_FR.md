@@ -93,6 +93,9 @@ On peut lancer le programme avec des options (raccourci Windows, ou Terminal sur
 - « pas une image MODE2/2352 » : refaites l'image en mode RAW (BIN/CUE), pas en ISO.
 - Pour recommencer la copie des fichiers : supprimez le dossier `data` indiqué plus haut et
   relancez le jeu.
+- Les messages du programme sont écrits dans `alundra2.log`, dans le même dossier que `data`
+  (`%APPDATA%\alundra2-fr` ou `~/Library/Application Support/alundra2-fr`) : joignez-le à
+  tout signalement de problème.
 
 ## À savoir
 
