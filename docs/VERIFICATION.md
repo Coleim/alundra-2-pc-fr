@@ -198,6 +198,8 @@ session de référence (`A2_LIFT_LIB=1`, avec les fonctions que le traceur surve
 - RAM : différences dans les zones de temps déjà connues (tampons de la manette `0x80082000`,
   pile `0x801FF000`, compteur de performance `0x800FA000`, variables de `VSync` `0x8005A000`),
   plus quelques pages ponctuelles (`0x800B9000` : 347 images, `0x8007F000` : 2,
-  `0x8014B000` et `0x80153000` : 1) ;
+  `0x8014B000` et `0x80153000` : 1). Mots examinés : la première de ces différences est dans
+  l'anneau de secteurs du film d'intro (`0x8014B940`…), dont le contenu à un instant donné
+  dépend de l'arrivée des secteurs, pas de la logique ;
 - écart d'horloge entre -411 et +434 cycles dans une image, +39 en fin de session : il ne
   s'accumule pas.
