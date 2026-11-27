@@ -18,6 +18,9 @@ typedef struct {
 
 extern uint16_t g_vram[VRAM_W * VRAM_H];
 extern GpuState g_gpu;
+extern uint32_t *g_gpu_owner, g_gpu_cmd_index;
+extern int g_gpu_knob[8];
+extern int g_gpu_dbg_x, g_gpu_dbg_y;
 
 void gpu_reset(void);
 void gpu_set_texpage(uint32_t w);
@@ -26,5 +29,6 @@ void gpu_fill(int x, int y, int w, int h, uint32_t color);
 void gpu_copy(int sx, int sy, int dx, int dy, int w, int h);
 void gpu_load(int x, int y, int w, int h, const uint16_t *src);
 void gpu_store(int x, int y, int w, int h, uint16_t *dst);
+void gpu_apply_drawenv(const uint8_t *drawenv);
 
 #endif

@@ -28,7 +28,7 @@ typedef struct {
     uint32_t lba, count, size;
     int raw;                      /* stored as whole sectors */
     uint32_t meta_off;            /* meta ranges: first sector in meta.bin */
-    int meta;
+    int meta;                     /* 1: sectors of meta.bin, 2: copies of one of them (fill) */
     char path[256];
     FILE *f;
 } Range;
@@ -69,6 +69,9 @@ int a2n_disc_open(const char *data_dir)
         } else if (!strcmp(kind, "meta")) {
             if (sscanf(line, "meta %u %u %u", &r.lba, &r.count, &r.meta_off) != 3) continue;
             r.meta = 1;
+        } else if (!strcmp(kind, "fill")) {
+            if (sscanf(line, "fill %u %u %u", &r.lba, &r.count, &r.meta_off) != 3) continue;
+            r.meta = 2;
         } else {
             continue;
         }
@@ -114,8 +117,16 @@ int a2n_disc_read(uint32_t lba, uint8_t *raw)
     const uint32_t i = lba - r->lba;
     if (r->meta) {
         if (!s_meta) return 0;
-        fseek(s_meta, (long)(r->meta_off + i) * SECTOR, SEEK_SET);
-        return fread(raw, 1, SECTOR, s_meta) == SECTOR;
+        fseek(s_meta, (long)(r->meta == 2 ? r->meta_off : r->meta_off + i) * SECTOR, SEEK_SET);
+        if (fread(raw, 1, SECTOR, s_meta) != SECTOR) return 0;
+        if (r->meta == 2) {                        /* the run's last kept sector, at its own place */
+            const uint32_t a = lba + 150;
+            const uint8_t m = (uint8_t)(a / 4500), sec = (uint8_t)((a / 75) % 60), fr = (uint8_t)(a % 75);
+            raw[12] = (uint8_t)(((m / 10) << 4) | (m % 10));
+            raw[13] = (uint8_t)(((sec / 10) << 4) | (sec % 10));
+            raw[14] = (uint8_t)(((fr / 10) << 4) | (fr % 10));
+        }
+        return 1;
     }
     if (!r->f) {
         char p[1400];
@@ -296,20 +307,44 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
     fprintf(idx, "sectors %u\n", sectors);
     for (int i = 0; i < n; ++i)
         fprintf(idx, "file %u %u %s %s\n", list[i].lba, list[i].size, list[i].raw ? "raw" : "data", list[i].path);
+    /* sectors outside the files: each distinct sector once in meta.bin; a sector equal to the
+     * previous one but for its position (long empty runs) as a copy of it ("fill") */
     uint32_t meta_off = 0;
+    uint8_t prev[SECTOR];
     for (uint32_t l = 0; l < sectors;) {
         if (covered[l]) { ++l; continue; }
         uint32_t e = l;
         while (e < sectors && !covered[e]) ++e;
-        /* long runs at the end of the disc are empty: keep at most 64 sectors of a run */
-        const uint32_t keep = e - l > 64 ? 64 : e - l;
-        fprintf(idx, "meta %u %u %u\n", l, keep, meta_off);
-        for (uint32_t k = 0; k < keep; ++k) {
-            fseek(s_img, (long)(l + k) * SECTOR, SEEK_SET);
+        uint32_t open_lba = 0, open_count = 0, open_off = 0;
+        for (uint32_t k = l; k < e;) {
+            fseek(s_img, (long)k * SECTOR, SEEK_SET);
             if (fread(sec, 1, SECTOR, s_img) != SECTOR) memset(sec, 0, sizeof sec);
             fwrite(sec, 1, SECTOR, meta);
+            if (open_count && open_lba + open_count == k) {
+                open_count++;
+            } else {
+                if (open_count) fprintf(idx, "meta %u %u %u\n", open_lba, open_count, open_off);
+                open_lba = k;
+                open_count = 1;
+                open_off = meta_off;
+            }
+            memcpy(prev, sec, SECTOR);
+            uint32_t same = 0;
+            for (uint32_t j = k + 1; j < e; ++j) {
+                fseek(s_img, (long)j * SECTOR, SEEK_SET);
+                if (fread(sec, 1, SECTOR, s_img) != SECTOR) break;
+                if (memcmp(sec, prev, 12) || memcmp(sec + 15, prev + 15, SECTOR - 15)) break;
+                same++;
+            }
+            if (same) {
+                fprintf(idx, "meta %u %u %u\n", open_lba, open_count, open_off);
+                fprintf(idx, "fill %u %u %u\n", k + 1, same, meta_off);
+                open_count = 0;
+            }
+            meta_off++;
+            k += 1 + same;
         }
-        meta_off += keep;
+        if (open_count) fprintf(idx, "meta %u %u %u\n", open_lba, open_count, open_off);
         l = e;
     }
     fclose(meta);

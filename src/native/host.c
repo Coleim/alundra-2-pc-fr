@@ -35,8 +35,8 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 static struct {
     int headless, fullscreen, scale, smooth, vsync;
     long frames, shot_every;
-    const char *data_opt, *saves_opt, *import, *dump_vram, *dump_ram, *shot_prefix;
-} opt = { 0, 0, 3, 0, 0, -1, 0, NULL, NULL, NULL, NULL, NULL, "shot" };
+    const char *data_opt, *saves_opt, *import, *dump_vram, *dump_ram, *shot_prefix, *verify;
+} opt = { 0, 0, 3, 0, 0, -1, 0, NULL, NULL, NULL, NULL, NULL, "shot", NULL };
 
 static char s_data[1024], s_saves[1024];
 static SDL_Window *s_win;
@@ -356,8 +356,36 @@ static void handle_event(const SDL_Event *e)
 
 /* ---------------------------------------------------------------- sound */
 
+/* --dump-audio FILE: the mixed sound as a 44.1 kHz stereo WAV (diagnostics) */
+static FILE *s_wav;
+static uint32_t s_wav_frames;
+
+static void wav_header(FILE *f, uint32_t frames)
+{
+    const uint32_t data = frames * 4, riff = 36 + data, fmt_size = 16, rate = 44100, bps = 44100 * 4;
+    const uint16_t pcm = 1, ch = 2, align = 4, bits = 16;
+    fseek(f, 0, SEEK_SET);
+    fwrite("RIFF", 1, 4, f); fwrite(&riff, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
+    fwrite(&fmt_size, 4, 1, f); fwrite(&pcm, 2, 1, f); fwrite(&ch, 2, 1, f); fwrite(&rate, 4, 1, f);
+    fwrite(&bps, 4, 1, f); fwrite(&align, 2, 1, f); fwrite(&bits, 2, 1, f);
+    fwrite("data", 1, 4, f); fwrite(&data, 4, 1, f);
+    fseek(f, 0, SEEK_END);
+}
+
+static void wav_close(void)
+{
+    if (!s_wav) return;
+    wav_header(s_wav, s_wav_frames);
+    fclose(s_wav);
+    s_wav = NULL;
+}
+
 void a2n_host_audio(const int16_t *stereo, int frames)
 {
+    if (s_wav) {
+        fwrite(stereo, 4, (size_t)frames, s_wav);
+        s_wav_frames += (uint32_t)frames;
+    }
     if (!s_audio) return;
     /* keep at most ~150 ms queued: the host clock and the sound card drift apart */
     if (SDL_GetAudioStreamQueued(s_audio) > 44100 * 4 * 15 / 100) return;
@@ -423,13 +451,34 @@ static void screenshot(const char *path)
 
 static void finish_run(void)
 {
+    wav_close();
     if (opt.dump_vram) dump(opt.dump_vram, a2n_gpu_vram(), 1024 * 512 * 2);
     if (opt.dump_ram) dump(opt.dump_ram, a2n_ram, A2N_RAM_SIZE);
+}
+
+/* A2_POKE=vblank:addr=value[,...]: write guest words at given vertical blanks (tests) */
+static void pokes(void)
+{
+    static const char *list;
+    static int init;
+    if (!init) { init = 1; list = getenv("A2_POKE"); }
+    if (!list) return;
+    for (const char *p = list; p && *p;) {
+        unsigned long v = 0;
+        unsigned a = 0, val = 0;
+        if (sscanf(p, "%lu:%x=%x", &v, &a, &val) == 3 && v == s_vblanks) {
+            a2n_w32(a, val);
+            fprintf(stderr, "a2: poke %08x = %08x at vblank %lu\n", a, val, v);
+        }
+        p = strchr(p, ',');
+        if (p) p++;
+    }
 }
 
 void a2n_host_vblank(void)
 {
     s_vblanks++;
+    pokes();
     if (opt.shot_every > 0 && s_vblanks % (uint64_t)opt.shot_every == 0) {
         char p[1100];
         snprintf(p, sizeof p, "%s_%06llu.bmp", opt.shot_prefix, (unsigned long long)s_vblanks);
@@ -572,6 +621,33 @@ static void first_launch(void)
     }
 }
 
+/* --verify-disc IMAGE.bin: compare every sector the drive would read with the image */
+static int verify_disc(const char *bin)
+{
+    FILE *f = fopen(bin, "rb");
+    if (!f) { fprintf(stderr, "a2: cannot open %s\n", bin); return 1; }
+    uint8_t a[2352], b[2352];
+    uint32_t data_bad = 0, header_bad = 0, missing = 0;
+    const uint32_t n = a2n_disc_sectors();
+    for (uint32_t lba = 0; lba < n; ++lba) {
+        if (fread(a, 1, sizeof a, f) != sizeof a) { missing++; break; }
+        if (!a2n_disc_read(lba, b)) { missing++; continue; }
+        if (memcmp(a + 24, b + 24, 2048)) {
+            if (data_bad++ < 5) fprintf(stderr, "a2: sector %u: data differs\n", lba);
+        } else if (memcmp(a, b, 24)) {
+            if (header_bad++ < 8) {
+                fprintf(stderr, "a2: sector %u header:", lba);
+                for (int i = 12; i < 24; ++i) fprintf(stderr, " %02x/%02x", a[i], b[i]);
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "a2: %u sectors: %u with different data, %u with a different header only, %u unreadable\n", n,
+            data_bad, header_bad, missing);
+    return data_bad || missing ? 1 : 0;
+}
+
 /* ---------------------------------------------------------------- main */
 
 static void usage(void)
@@ -600,6 +676,11 @@ int main(int argc, char *argv[])
         else if (!strcmp(a, "--dump-ram") && v) opt.dump_ram = argv[++i];
         else if (!strcmp(a, "--shot-every") && v) opt.shot_every = atol(argv[++i]);
         else if (!strcmp(a, "--input") && v) load_input_script(argv[++i]);
+        else if (!strcmp(a, "--verify-disc") && v) opt.verify = argv[++i];
+        else if (!strcmp(a, "--dump-audio") && v) {
+            s_wav = fopen(argv[++i], "wb");
+            if (s_wav) wav_header(s_wav, 0);
+        }
         else if (!strcmp(a, "--shot-prefix") && v) opt.shot_prefix = argv[++i];
         else if (!strncmp(a, "-psn_", 5)) { }                      /* macOS Finder */
         else { usage(); return 2; }
@@ -620,6 +701,7 @@ int main(int argc, char *argv[])
         }
         first_launch();
     }
+    if (opt.verify) return verify_disc(opt.verify);
     size_t size = 0;
     void *exe = a2n_host_load("files/SLES_026.01", &size);
     if (!exe || !a2n_load_exe(exe, size)) {

@@ -152,6 +152,71 @@ static void gpu_mix(uint32_t w)
     else s_gpu_main_hash = (s_gpu_main_hash ^ w) * 0x100000001B3ull;
 }
 
+/* ---- A2_DIAG_GPUCAP=prefix, A2_DIAG_GPUCAP_AT=i,j..: everything sent to the GPU during
+ * these frames, in full, with VRAM before and after (prefix.<i>.before / .cmds / .after),
+ * to check the standalone engine's software GPU (tools/gpucheck) ---- */
+static const char *s_cap_prefix;
+static uint32_t s_cap_at[MAX_LIST];
+static int s_cap_count;
+static FILE *s_cap;
+static uint32_t s_cap_frame;
+
+static void cap_record(uint32_t type, const uint32_t *w, uint32_t n)
+{
+    if (!s_cap) return;
+    fwrite(&type, 4, 1, s_cap);
+    fwrite(&n, 4, 1, s_cap);
+    fwrite(w, 4, n, s_cap);
+}
+
+static void cap_vram(uint32_t frame, const char *what)
+{
+    const uint16_t *vram = gpu_get_vram();
+    char name[1100];
+    snprintf(name, sizeof name, "%s.%u.%s", s_cap_prefix, frame, what);
+    FILE *f = fopen(name, "wb");
+    if (!f || !vram) { if (f) fclose(f); return; }
+    fwrite(vram, 1, VRAM_BYTES, f);
+    fclose(f);
+}
+
+/* Captures run from one moment the GPU is idle to the next one: the first GPU call (or
+ * waiting VSync) after the game called DrawSync(0), which waits for the drawing queue.
+ * A capture starts at the first idle moment at or after a listed VSync index. */
+static int s_cap_after_sync, s_cap_draws;
+static uint32_t s_cap_done[MAX_LIST];
+static int s_cap_n_done;
+
+static void cap_idle(void)
+{
+    if (!s_cap_prefix || !s_cap_after_sync) return;
+    s_cap_after_sync = 0;
+    if (s_cap && s_cap_draws < 2) return;          /* a window with whole frames of drawing */
+    if (s_cap) {
+        fclose(s_cap);
+        s_cap = NULL;
+        cap_vram(s_cap_frame, "after");
+        return;
+    }
+    for (int i = 0; i < s_cap_count; ++i) {
+        if (s_index < s_cap_at[i] || in_list(s_cap_done, s_cap_n_done, s_cap_at[i])) continue;
+        if (s_cap_n_done < MAX_LIST) s_cap_done[s_cap_n_done++] = s_cap_at[i];
+        char name[1100];
+        s_cap_frame = s_cap_at[i];
+        cap_vram(s_cap_frame, "before");
+        snprintf(name, sizeof name, "%s.%u.cmds", s_cap_prefix, s_cap_frame);
+        s_cap = fopen(name, "wb");
+        s_cap_draws = 0;
+        return;
+    }
+}
+
+static int draw_sync_hook(CPUState *cpu)
+{
+    if (cpu->gpr[4] == 0) s_cap_after_sync = 1;
+    return 0;
+}
+
 /* ---- GPU journal ---- */
 
 static void journal_rect(const char *kind, const uint8_t *ram, uint32_t rect, const uint32_t *extra, int n)
@@ -175,6 +240,11 @@ static void journal_ot(const uint8_t *ram, uint32_t p)
     for (uint32_t guard = 0; guard < (1u << 20); ++guard) {
         const uint32_t tag = ram_word(ram, p);
         const uint32_t n = tag >> 24;
+        if (n && s_cap) {
+            uint32_t w[256];
+            for (uint32_t i = 0; i < n && i < 256; ++i) w[i] = ram_word(ram, p + 4 * (i + 1));
+            cap_record(1, w, n < 256 ? n : 256);
+        }
         if (n) {
             gpu_mix(n);
             for (uint32_t i = 1; i <= n; ++i) gpu_mix(ram_word(ram, p + 4 * i));
@@ -194,6 +264,7 @@ static void journal_drawenv(const uint8_t *ram, uint32_t env)
 {
     uint32_t w[DRAWENV_USER_BYTES / 4];
     for (uint32_t i = 0; i < DRAWENV_USER_BYTES / 4; ++i) w[i] = ram_word(ram, env + 4 * i);
+    cap_record(2, w, DRAWENV_USER_BYTES / 4);
     gpu_mix(0x454E5644u); /* "DVNE" */
     for (uint32_t i = 0; i < DRAWENV_USER_BYTES / 4; ++i) gpu_mix(w[i]);
     s_gpu_items++;
@@ -206,6 +277,8 @@ static void journal_drawenv(const uint8_t *ram, uint32_t env)
 
 static int draw_otag_hook(CPUState *cpu)
 {
+    cap_idle();
+    if (s_cap) s_cap_draws++;
     const uint8_t *ram = replay_host_ram();
     if (ram) journal_ot(ram, cpu->gpr[4]);
     return 0;
@@ -213,6 +286,7 @@ static int draw_otag_hook(CPUState *cpu)
 
 static int draw_otag_env_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     if (ram) {
         journal_drawenv(ram, cpu->gpr[5]);
@@ -223,9 +297,15 @@ static int draw_otag_env_hook(CPUState *cpu)
 
 static int draw_prim_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     if (!ram) return 0;
     const uint32_t p = cpu->gpr[4], n = ram_word(ram, p) >> 24;
+    if (s_cap) {
+        uint32_t w[256];
+        for (uint32_t i = 0; i < n && i < 256; ++i) w[i] = ram_word(ram, p + 4 * (i + 1));
+        cap_record(6, w, n < 256 ? n : 256);
+    }
     gpu_mix(0x4D495250u); /* "PRIM" */
     gpu_mix(n);
     for (uint32_t i = 1; i <= n; ++i) gpu_mix(ram_word(ram, p + 4 * i));
@@ -264,6 +344,7 @@ static int set_disp_mask_hook(CPUState *cpu)
 
 static int put_drawenv_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     if (ram) journal_drawenv(ram, cpu->gpr[4]);
     return 0;
@@ -271,6 +352,7 @@ static int put_drawenv_hook(CPUState *cpu)
 
 static int load_image_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     if (!ram) return 0;
     const uint32_t rect = cpu->gpr[4], src = cpu->gpr[5];
@@ -278,6 +360,13 @@ static int load_image_hook(CPUState *cpu)
     const uint32_t w = (uint16_t)wh, h = (uint16_t)(wh >> 16);
     uint32_t words = (w * h + 1u) / 2u;
     if (words > VRAM_BYTES / 4u) words = VRAM_BYTES / 4u;
+    if (s_cap) {
+        static uint32_t buf[2 + VRAM_BYTES / 4u];
+        buf[0] = ram_word(ram, rect);
+        buf[1] = wh;
+        for (uint32_t i = 0; i < words; ++i) buf[2 + i] = ram_word(ram, src + 4 * i);
+        cap_record(3, buf, 2 + words);
+    }
     uint64_t hh = 0xCBF29CE484222325ull;
     for (uint32_t i = 0; i < words; ++i) hh = (hh ^ ram_word(ram, src + 4 * i)) * 0x100000001B3ull;
     const uint32_t data = fold(hh);
@@ -287,6 +376,7 @@ static int load_image_hook(CPUState *cpu)
 
 static int store_image_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     if (ram) journal_rect("STORE", ram, cpu->gpr[4], NULL, 0);
     return 0;
@@ -294,16 +384,26 @@ static int store_image_hook(CPUState *cpu)
 
 static int move_image_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     const uint32_t extra[2] = { cpu->gpr[5], cpu->gpr[6] };
+    if (ram && s_cap) {
+        const uint32_t w[4] = { ram_word(ram, cpu->gpr[4]), ram_word(ram, cpu->gpr[4] + 4), cpu->gpr[5], cpu->gpr[6] };
+        cap_record(5, w, 4);
+    }
     if (ram) journal_rect("MOVE", ram, cpu->gpr[4], extra, 2);
     return 0;
 }
 
 static int clear_image_hook(CPUState *cpu)
 {
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     const uint32_t extra[3] = { cpu->gpr[5] & 0xFFu, cpu->gpr[6] & 0xFFu, cpu->gpr[7] & 0xFFu };
+    if (ram && s_cap) {
+        const uint32_t w[5] = { ram_word(ram, cpu->gpr[4]), ram_word(ram, cpu->gpr[4] + 4), extra[0], extra[1], extra[2] };
+        cap_record(4, w, 5);
+    }
     if (ram) journal_rect("CLEAR", ram, cpu->gpr[4], extra, 3);
     return 0;
 }
@@ -361,6 +461,7 @@ static int vsync_hook(CPUState *cpu)
     const int32_t mode = (int32_t)cpu->gpr[4];
     if (mode == 1 || mode < 0)          /* counter queries do not wait */
         return 0;
+    cap_idle();
     const uint8_t *ram = replay_host_ram();
     const uint16_t *vram = gpu_get_vram();
     if (ram && s_trace) {
@@ -460,6 +561,8 @@ static void a2_register_diag(void)
     if ((e = getenv("A2_DIAG_STOP"))) s_stop = strtol(e, NULL, 10);
     s_dump_count = parse_list(getenv("A2_DIAG_DUMP_AT"), s_dump_at);
     s_gpu_dump_count = parse_list(getenv("A2_DIAG_GPU_DUMP_AT"), s_gpu_dump_at);
+    s_cap_prefix = getenv("A2_DIAG_GPUCAP");
+    s_cap_count = parse_list(getenv("A2_DIAG_GPUCAP_AT"), s_cap_at);
     if ((e = getenv("A2_DIAG_RAW")) && e[0] == '1') s_raw = 1;
     for (e = getenv("A2_DIAG_IGNORE"); e && *e && s_ignore_count < MAX_RANGES;) {
         char *end;
@@ -474,6 +577,7 @@ static void a2_register_diag(void)
     if (in_list(s_gpu_dump_at, s_gpu_dump_count, 0)) open_gpu_text(0);
 
     func_override_add("a2.diag.vsync", VSYNC_ADDR, vsync_hook, 0);
+    if (s_cap_prefix) func_override_add("a2.diag.draw_sync", 0x80033954u, draw_sync_hook, 0);
     func_override_add("a2.diag.draw_otag", DRAW_OTAG_ADDR, draw_otag_hook, 0);
     func_override_add("a2.diag.draw_otag_env", DRAW_OTAG_ENV_ADDR, draw_otag_env_hook, 0);
     func_override_add("a2.diag.put_drawenv", PUT_DRAWENV_ADDR, put_drawenv_hook, 0);

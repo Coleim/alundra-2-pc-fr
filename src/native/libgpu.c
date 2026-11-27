@@ -154,27 +154,7 @@ static int n_PutDrawEnv(CPUState *cpu)
 {
     const uint32_t e = cpu->gpr[4];
     for (int i = 0; i < 0x5C; ++i) s_drawenv[i] = (uint8_t)a2n_r8(e + (uint32_t)i);
-    const int cx = rd16(e), cy = rd16(e + 2), cw = rd16(e + 4), ch = rd16(e + 6);
-    g_gpu.area_x0 = cx < 0 ? 0 : cx > 1023 ? 1023 : cx;
-    g_gpu.area_y0 = cy < 0 ? 0 : cy > 511 ? 511 : cy;
-    int x1 = cx + cw - 1, y1 = cy + ch - 1;
-    g_gpu.area_x1 = x1 < 0 ? 0 : x1 > 1023 ? 1023 : x1;
-    g_gpu.area_y1 = y1 < 0 ? 0 : y1 > 511 ? 511 : y1;
-    g_gpu.off_x = rd16(e + 8);
-    g_gpu.off_y = rd16(e + 10);
-    const int tx = rd16(e + 0x0C), ty = rd16(e + 0x0E), tw = rd16(e + 0x10), th = rd16(e + 0x12);
-    g_gpu.tw_mask_x = ((~(tw - 1)) & 0xFF) >> 3;
-    g_gpu.tw_mask_y = ((~(th - 1)) & 0xFF) >> 3;
-    g_gpu.tw_off_x = (tx >> 3) & 0x1F;
-    g_gpu.tw_off_y = (ty >> 3) & 0x1F;
-    if (!tw) g_gpu.tw_mask_x = 0;
-    if (!th) g_gpu.tw_mask_y = 0;
-    const uint32_t tpage = a2n_r16(e + 0x14);
-    gpu_set_texpage((tpage & 0x9FF) | ((uint32_t)a2n_r8(e + 0x16) << 9) | ((uint32_t)a2n_r8(e + 0x17) << 10));
-    if (a2n_r8(e + 0x18)) {
-        const uint32_t c = a2n_r8(e + 0x19) | (a2n_r8(e + 0x1A) << 8) | (a2n_r8(e + 0x1B) << 16);
-        gpu_fill(cx, cy, cw, ch, c);
-    }
+    gpu_apply_drawenv(s_drawenv);
     return a2n_ret(cpu, e);
 }
 
