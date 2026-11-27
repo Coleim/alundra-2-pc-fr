@@ -127,6 +127,8 @@ static inline void plot(int x, int y, uint16_t c, int semi)
     if (semi) c = (uint16_t)(blend(*p, c, g_gpu.semi_mode) | (c & 0x8000));
     if (g_gpu.mask_set) c |= 0x8000;
     if (g_gpu_owner && *p != c) g_gpu_owner[p - g_vram] = g_gpu_cmd_index;
+    if (g_gpu_owner && (x & 1023) == g_gpu_dbg_x && (y & 511) == g_gpu_dbg_y)
+        fprintf(stderr, "dbg plot cmd#%u %04x -> %04x\n", g_gpu_cmd_index, *p, c);
     *p = c;
 }
 

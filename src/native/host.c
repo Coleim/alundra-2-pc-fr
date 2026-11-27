@@ -466,7 +466,8 @@ static void finish_run(void)
     if (opt.dump_ram) dump(opt.dump_ram, a2n_ram, A2N_RAM_SIZE);
 }
 
-/* A2_POKE=vblank:addr=value[,...]: write guest words at given vertical blanks (tests) */
+/* A2_POKE=vblank:addr=value[:size][,...]: write guest memory at given vertical blanks (tests;
+ * size 1, 2 or 4 bytes, 4 by default) */
 static void pokes(void)
 {
     static const char *list;
@@ -475,10 +476,12 @@ static void pokes(void)
     if (!list) return;
     for (const char *p = list; p && *p;) {
         unsigned long v = 0;
-        unsigned a = 0, val = 0;
-        if (sscanf(p, "%lu:%x=%x", &v, &a, &val) == 3 && v == s_vblanks) {
-            a2n_w32(a, val);
-            fprintf(stderr, "a2: poke %08x = %08x at vblank %lu\n", a, val, v);
+        unsigned a = 0, val = 0, size = 4;
+        if (sscanf(p, "%lu:%x=%x:%u", &v, &a, &val, &size) >= 3 && v == s_vblanks) {
+            if (size == 1) a2n_w8(a, (uint8_t)val);
+            else if (size == 2) a2n_w16(a, (uint16_t)val);
+            else a2n_w32(a, val);
+            fprintf(stderr, "a2: poke %08x = %x (%u bytes) at vblank %lu\n", a, val, size, v);
         }
         p = strchr(p, ',');
         if (p) p++;

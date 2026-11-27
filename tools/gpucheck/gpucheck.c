@@ -15,6 +15,9 @@
 
 static uint16_t s_after[VRAM_W * VRAM_H], s_before[VRAM_W * VRAM_H];
 static uint32_t s_owner[VRAM_W * VRAM_H];
+typedef struct { uint32_t w0, w[12]; int n; uint8_t dither, semi_mode, depth, mask; int offx, offy, tx, ty; } CmdInfo;
+static CmdInfo *s_cmds;
+static uint32_t s_n_cmds;
 static int s_show_op = -1, s_shown;
 
 static int load(const char *path, void *dst, size_t n)
@@ -27,9 +30,6 @@ static int load(const char *path, void *dst, size_t n)
 }
 
 /* per command: its first word and the GPU state that matters, for the summary */
-typedef struct { uint32_t w0, w[12]; int n; uint8_t dither, semi_mode, depth, mask; int offx, offy, tx, ty; } CmdInfo;
-static CmdInfo *s_cmds;
-static uint32_t s_n_cmds;
 
 static void packet(const uint32_t *w, int n)
 {
@@ -58,6 +58,24 @@ static void packet(const uint32_t *w, int n)
     }
 }
 
+/* VRAM transfers get a command index of their own (pseudo-ops 0x01 load, 0x02 clear, 0x80 move) */
+static void transfer_owner(uint32_t pseudo, int x, int y, int w, int h)
+{
+    const uint32_t idx = ++g_gpu_cmd_index;
+    if (idx >= s_n_cmds) {
+        s_n_cmds = idx * 2 + 1024;
+        s_cmds = realloc(s_cmds, sizeof *s_cmds * s_n_cmds);
+    }
+    CmdInfo ci = { 0 };
+    ci.w0 = pseudo << 24;
+    ci.n = 1;
+    ci.w[0] = ci.w0;
+    s_cmds[idx] = ci;
+    if (pseudo == 0x02) { x &= 0x3F0; w = ((w & 0x3FF) + 15) & ~15; }
+    for (int j = 0; j < h; ++j)
+        for (int i = 0; i < w; ++i) s_owner[((y + j) & 511) * VRAM_W + ((x + i) & 1023)] = idx;
+}
+
 static void replay(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -76,17 +94,18 @@ static void replay(const char *path)
             break;
         case 3: {                                         /* LoadImage */
             const int x = (int16_t)buf[0], y = (int16_t)(buf[0] >> 16), w = (int16_t)buf[1], h = (int16_t)(buf[1] >> 16);
-            if (w > 0 && h > 0) gpu_load(x, y, w, h, (const uint16_t *)(buf + 2));
+            if (w > 0 && h > 0) { gpu_load(x, y, w, h, (const uint16_t *)(buf + 2)); transfer_owner(0x01, x, y, w, h); }
             break;
         }
         case 4: {                                         /* ClearImage */
             const int x = (int16_t)buf[0], y = (int16_t)(buf[0] >> 16), w = (int16_t)buf[1], h = (int16_t)(buf[1] >> 16);
             gpu_fill(x, y, w, h, (buf[2] & 0xFF) | ((buf[3] & 0xFF) << 8) | ((buf[4] & 0xFF) << 16));
+            transfer_owner(0x02, x, y, w, h);
             break;
         }
         case 5: {                                         /* MoveImage */
             const int x = (int16_t)buf[0], y = (int16_t)(buf[0] >> 16), w = (int16_t)buf[1], h = (int16_t)(buf[1] >> 16);
-            if (w > 0 && h > 0) gpu_copy(x, y, (int)(buf[2] & 0x3FF), (int)(buf[3] & 0x1FF), w, h);
+            if (w > 0 && h > 0) { gpu_copy(x, y, (int)(buf[2] & 0x3FF), (int)(buf[3] & 0x1FF), w, h); transfer_owner(0x80, (int)(buf[2] & 0x3FF), (int)(buf[3] & 0x1FF), w, h); }
             break;
         }
         default:
