@@ -20,11 +20,26 @@ Priority: a 1:1 port first (release 1.0), improvements after (see `PLAN.md`).
 ## Phase 2 (PsyQ libraries) - done
 - `tools/psyq_sigs.py` (public lab313ru signatures, cloned next to the repo): 149 objects,
   547 functions, 414 names; SDK ~4.5. Details and map: `docs/LIBRARIES.md`.
-- `tools/progress.py` splits game code (2378 functions, phase 3) from library code (694, phase 4).
+- `tools/progress.py` splits game code (2378 functions then, 2707 once all code was found) from
+  library code (694, phase 4).
 - The end of the main executable (105 functions) is a game-specific sound driver, not libspu/libsnd.
 
-## Next (phase 3)
-- Input layer, main loop / mode manager, file and module loader.
+## Phase 3 (the game in C) - done
+- All 2707 game functions are C: 2678 translated from the MIPS by `tools/a2lift.py`
+  (`src/game/lifted/`, exact semantics and the framework's timing model), 29 rewritten by hand
+  (`src/game/`: input, system, frame pacing and display lists, camera).
+- The count grew while translating: 77 functions reached only through pointers
+  (`tools/find_hidden_functions.py`), and four hand-written assembly libraries loaded at
+  `0x80010000` (`AL22`, PACK0 entries 106-109, 256 functions).
+- Verified on two recorded sessions (14 644 and 19 062 game frames): GPU journal and VRAM
+  identical every frame, no game function executed outside C (`A2_LIFT_COVERAGE`), RAM identical
+  outside the documented timing zones (`docs/VERIFICATION.md`).
+- Finding: libetc's `VSync` wait ends a few loop turns short of its timeout in this timing model;
+  code running in the VBlank interrupt must charge the original's exact cycles.
+
+## Next (phase 4, readable rewrites continue in parallel)
+- Native files, input and memory cards first, then VSync/timing, GTE, GPU, sound.
+- Readable rewrites: loader, main loop, projection, actors.
 
 ## Not part of the real port
 `build-release`, `dist/` (v1 recompilation packages, with disc, never publish), `scripts/package_*.sh`.

@@ -26,6 +26,22 @@ cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --target psx-runtime
 ```
 
+### The game code in C (phase 3, optional)
+
+The game's own code can run as C translated from your disc instead of the recompiler's
+code (`docs/REWRITING.md`). It is generated locally, like `generated/`, and never committed:
+
+```bash
+python3 -m venv .venv-decomp && .venv-decomp/bin/pip install splat64[mips] rabbitizer
+python3 tools/extract_disc.py "disc/Alundra 2 - Une Legende Est Nee (France).cue" --out extracted
+for c in config/*.yaml; do .venv-decomp/bin/python -m splat split "$c"; done
+.venv-decomp/bin/python tools/a2lift.py          # writes src/game/lifted/
+cmake --build build-release --target psx-runtime
+```
+
+Without `src/game/lifted/`, the build still works: the original code runs wherever no function
+was rewritten by hand. `A2_LIFTED=0` or `A2_OVERRIDES=0` switch the C code off at run time.
+
 ## Status
 
 Local bring-up of the French release: not qualified.

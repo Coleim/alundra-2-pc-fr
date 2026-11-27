@@ -29,10 +29,12 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "cpu_state.h"
 #include "func_override.h"
 #include "psx_cycles.h"
+#include "a2_rewrite.h"
 
 extern uint32_t psx_read_word(uint32_t addr);
 extern uint16_t psx_read_half(uint32_t addr);
@@ -206,6 +208,7 @@ static void a2_register_input_overrides(void)
 {
     const char *e;
     if ((e = getenv("A2_OVERRIDES")) && e[0] == '0') return;
+    if ((e = getenv("A2_DISABLE")) && strstr(e, "func_800A09C0")) return;   /* the lifted one runs */
     if ((e = getenv("A2_ANALOG")) && e[0] == '0') s_analog = 0;
     if ((e = getenv("A2_VERIFY")) && e[0] == '1') s_verify = 1;
 
@@ -215,4 +218,5 @@ static void a2_register_input_overrides(void)
     if (s_verify) atexit(print_verify_stats);
     func_override_add_guarded("a2.input.heading", 0x800A09C0u, input_heading_override,
                               guard, 4, FO_CREDIT_SELF);
+    a2_rewrite_note(0x800A09C0u);
 }

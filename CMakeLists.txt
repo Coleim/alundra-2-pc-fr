@@ -11,6 +11,25 @@ endif()
 
 project(alundra_2 LANGUAGES C CXX)
 
+# Local changes to the framework, kept as patches (the submodule is upstream's).
+# Applied once at configure time; an already-applied patch is left alone.
+file(GLOB _A2_FRAMEWORK_PATCHES "${CMAKE_CURRENT_SOURCE_DIR}/patches/psxrecomp/*.patch")
+list(SORT _A2_FRAMEWORK_PATCHES)
+foreach(_patch IN LISTS _A2_FRAMEWORK_PATCHES)
+    execute_process(COMMAND git apply --reverse --check "${_patch}"
+                    WORKING_DIRECTORY "${PSXRECOMP_ROOT}"
+                    RESULT_VARIABLE _already OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _already EQUAL 0)
+        execute_process(COMMAND git apply "${_patch}"
+                        WORKING_DIRECTORY "${PSXRECOMP_ROOT}"
+                        RESULT_VARIABLE _rc)
+        if(NOT _rc EQUAL 0)
+            message(FATAL_ERROR "Cannot apply framework patch ${_patch}")
+        endif()
+        message(STATUS "Applied framework patch ${_patch}")
+    endif()
+endforeach()
+
 # --- Opt-in product surfaces (OFF by default in the framework) -------------
 # Scaffold prompts / flags fill these. Without recomp-ui, PSX_RECOMP_UI is OFF.
 # Setup-host CI requires WIZARD_CMAKE_BLOCK / ENABLE_SETUP_WIZARD (FORCE_SETUP_HOST
@@ -63,10 +82,25 @@ foreach(_PSX_RUNTIME_CONFIG game.toml game_options.toml)
     endif()
 endforeach()
 
-# Hand-written replacements for guest functions (see src/ and docs/DECOMP_NOTES.md).
+# Hand-written replacements for guest functions (see src/ and docs/REWRITING.md).
+file(GLOB A2_GAME_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/game/*.c")
 target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src/input_override.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/a2_rewrite.c"
+    ${A2_GAME_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/a2_lift_runtime.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/a2_diag.c")
+# Game code translated from the MIPS by tools/a2lift.py (exact translation; hand-written
+# rewrites in src/game/ take precedence). Generated locally from the player's disc, like
+# generated/: without it, the original code runs where nothing was rewritten by hand.
+file(GLOB A2_LIFTED_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/game/lifted/*.c")
+if(A2_LIFTED_SOURCES)
+    target_sources(psx-runtime PRIVATE ${A2_LIFTED_SOURCES})
+    set_source_files_properties(${A2_LIFTED_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wno-unused-label;-Wno-unused-value")
+else()
+    message(STATUS "src/game/lifted/ is empty: run tools/a2lift.py to translate the game code")
+    target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/a2_lift_none.c")
+endif()
 target_include_directories(psx-runtime PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
 if(NOT WIN32 AND NOT APPLE)
     target_link_libraries(psx-runtime PRIVATE m)

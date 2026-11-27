@@ -1,0 +1,120 @@
+diff --git a/runtime/include/func_override.h b/runtime/include/func_override.h
+index 2e114219..f16d0d1b 100644
+--- a/runtime/include/func_override.h
++++ b/runtime/include/func_override.h
+@@ -116,7 +116,7 @@ struct CPUState;
+ extern "C" {
+ #endif
+ 
+-#define FO_MAX_OVERRIDES   128
++#define FO_MAX_OVERRIDES   4096   /* a full port rewrites thousands of functions */
+ #define FO_MAX_ID          64
+ #define FO_MAX_GUARD_WORDS 4
+ 
+@@ -182,6 +182,10 @@ void func_override_guest_call(struct CPUState *cpu, uint32_t target,
+  * guest-level wrap would observe). */
+ void func_override_call_original(struct CPUState *cpu);
+ 
++/* Guest address (KSEG0) of the override currently executing, 0 outside one. Lets one
++ * callback serve several addresses (a port registering thousands of functions). */
++uint32_t func_override_active_address(void);
++
+ /* Register on behalf of a mod package plan. Identical to the two calls above
+  * (pass n_words 0 for unguarded) except the entry is tagged package-armed, so
+  * func_override_reset_package_armed can drop it when the plan is cleared.
+diff --git a/runtime/src/func_override.c b/runtime/src/func_override.c
+index 97985f6b..80f6d9b1 100644
+--- a/runtime/src/func_override.c
++++ b/runtime/src/func_override.c
+@@ -49,6 +49,27 @@ typedef struct {
+ static Entry s_entries[FO_MAX_OVERRIDES];
+ static int   s_count = 0;
+ 
++/* Address index: open addressing over s_entries, so the per-dispatch consult
++ * stays O(1) when a port registers thousands of rewritten functions.
++ * Slot value = entry index + 1, 0 = empty. Twice the capacity keeps probes short. */
++#define FO_INDEX_SLOTS (2u * FO_MAX_OVERRIDES)
++static uint16_t s_index[FO_INDEX_SLOTS];
++
++static uint32_t slot_of(uint32_t phys)
++{
++    return ((phys >> 2) * 2654435761u) & (FO_INDEX_SLOTS - 1u);
++}
++
++static void index_rebuild(void)
++{
++    memset(s_index, 0, sizeof s_index);
++    for (int i = 0; i < s_count; i++) {
++        uint32_t k = slot_of(s_entries[i].phys);
++        while (s_index[k]) k = (k + 1u) & (FO_INDEX_SLOTS - 1u);
++        s_index[k] = (uint16_t)(i + 1);
++    }
++}
++
+ /* call_original support: the address whose hook is currently executing
+  * (for redial) and a one-shot bypass armed by func_override_call_original.
+  * Dispatch is single-threaded; a nested override (an override whose
+@@ -61,9 +82,9 @@ static uint32_t normalise(uint32_t addr) { return addr & 0x1FFFFFFFu; }
+ 
+ static Entry *find(uint32_t phys)
+ {
+-    for (int i = 0; i < s_count; i++)
+-        if (s_entries[i].phys == phys)
+-            return &s_entries[i];
++    for (uint32_t k = slot_of(phys); s_index[k]; k = (k + 1u) & (FO_INDEX_SLOTS - 1u))
++        if (s_entries[s_index[k] - 1].phys == phys)
++            return &s_entries[s_index[k] - 1];
+     return NULL;
+ }
+ 
+@@ -103,6 +124,11 @@ static int add_common(const char *id, uint32_t addr, FuncOverrideFn fn,
+     e->package = package ? 1 : 0;
+     e->credit  = credit;
+     s_count++;
++    {
++        uint32_t k = slot_of(phys);
++        while (s_index[k]) k = (k + 1u) & (FO_INDEX_SLOTS - 1u);
++        s_index[k] = (uint16_t)s_count;
++    }
+     return FO_OK;
+ }
+ 
+@@ -146,14 +172,12 @@ int func_override_add_package_scoped(const char *id, uint32_t addr, FuncOverride
+ int func_override_active(void) { return s_active_phys != 0; }
+ 
+ /* The hook. Runs on EVERY dispatch, so the common path — nothing registered
+- * for this address — must stay cheap. A linear scan over a handful of
+- * entries beats a hash for realistic counts and keeps the code honest;
+- * revisit if a game ever registers hundreds. */
++ * for this address — must stay cheap: one hashed probe (see s_index). */
+ static int hook(CPUState *cpu, uint32_t phys)
+ {
+-    for (int i = 0; i < s_count; i++) {
+-        Entry *e = &s_entries[i];
+-        if (e->phys != phys) continue;
++    {
++        Entry *e = find(phys);
++        if (!e) return 0;
+         /* One-shot bypass: func_override_call_original re-dispatched this
+          * address; let the original backend take it exactly once. */
+         if (s_bypass_phys == phys) {
+@@ -229,6 +253,11 @@ void func_override_call_original(CPUState *cpu)
+     s_bypass_phys = saved;
+ }
+ 
++uint32_t func_override_active_address(void)
++{
++    return s_active_phys ? (0x80000000u | s_active_phys) : 0u;
++}
++
+ void func_override_install(void)
+ {
+     /* Leave the hook NULL when empty: dispatch then matches a build without
+@@ -257,6 +286,7 @@ int func_override_reset_package_armed(void)
+         w++;
+     }
+     s_count = w;
++    index_rebuild();
+     if (removed) {
+         s_active_phys = 0;
+         s_bypass_phys = 0;

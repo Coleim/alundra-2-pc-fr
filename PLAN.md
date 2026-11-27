@@ -81,32 +81,31 @@ Trois couches, qui deviennent réelles à mesure que le jeu est réécrit :
 - [x] Inventaire des formats de données : tables des `PAK`/`GP`, textures (TIM/maison), modèles, cartes, animations, scripts de cinématique, sons VAB/SEQ, textes (M à L).
 - [x] Rejeu d'entrées : enregistrer des parcours de référence (boutons par image) avec points de contrôle (M).
 - [x] Journal des commandes GPU par image, pour comparer le rendu (M) : `src/a2_diag.c` (tables d'ordre, environnements de dessin, transferts VRAM, empreinte de la VRAM, RAM par page, cycles) et `tools/replay_diff.py` ; méthode dans `docs/VERIFICATION.md`.
-- [x] Blocage intermittent du harnais en mode accéléré (S–M) : détection complète (plus d'image qui avance **ou** serveur de débogage muet), piles des threads relevées, relance automatique ; instances parallèles isolées ; `tools/stall_hunt.py` ; 13 sessions de suite sans blocage. Les vérifications 1:1 passent par le rejeu, sans le harnais accéléré. Cause non reproduite ; pistes : correctifs SIO/IRQ du framework en amont (à reprendre lors du fork, phase 3).
+- [x] Blocage intermittent du harnais en mode accéléré (S–M) : détection complète (plus d'image qui avance **ou** serveur de débogage muet), piles des threads relevées, relance automatique ; instances parallèles isolées ; `tools/stall_hunt.py` ; 13 sessions de suite sans blocage. Les vérifications 1:1 passent par le rejeu, sans le harnais accéléré. Cause probable : **mise en veille du Mac** (le dernier relevé montre 32 s de temps réel pour 10 ms de temps de jeu : processus gelé, pas bloqué) ; les tâches longues tournent désormais sous `caffeinate`.
 
 ### Phase 2 — Bibliothèque PsyQ : identifier et nommer  `[x]` terminée  (L)
 Les fonctions de la bibliothèque Sony sont **déjà écrites publiquement** (projet de décompilation PsyQ) : on les reconnaît, on les nomme, on ne les réécrit pas à la main. Détails : `docs/LIBRARIES.md`.
 - [x] Reconnaissance par signatures (`tools/psyq_sigs.py`, signatures publiques lab313ru, clonées hors du dépôt) : **149 fichiers objets, 547 fonctions, 414 noms** en une vingtaine de secondes ; kit **PsyQ 4.5** environ.
 - [x] Bibliothèques nommées : libc2, libpress, libgpu, libgte, libcd, libds, libetc, libapi, libmath, libsn, libmcrd, libcard, libpad (+ `SsGetNck` de libsnd). Pas de libgs ni de libspu standard. Contrôle : 24 noms existants confirmés, 2 noms devinés corrigés.
-- [x] Séparation « bibliothèque » / « code du jeu » (`tools/progress.py`) : **2 378 fonctions de jeu à réécrire** (phase 3), **694 fonctions de bibliothèque à remplacer** (phase 4). Aucune bibliothèque dans les modules `GAME`/`EVENT`/`PACK1` : tout y est du code du jeu.
+- [x] Séparation « bibliothèque » / « code du jeu » (`tools/progress.py`) : **2 378 fonctions de jeu à réécrire** (phase 3, 2 707 une fois les fonctions cachées et les bibliothèques `AL22` trouvées), **694 fonctions de bibliothèque à remplacer** (phase 4). Aucune bibliothèque dans les modules `GAME`/`EVENT`/`PACK1` : tout y est du code du jeu.
 - [x] Découverte : la fin du programme (105 fonctions, `0x80048A78`-`0x800521E0`) est un **pilote son propre au jeu** (accès direct à la puce son), ni libspu ni libsnd : à étudier avec le moteur son de la phase 4.
 
-### Phase 3 — Réécriture du jeu en C (mode mixte)  `[~]` démarrée  (XL)
-**2 378 fonctions** du jeu à réécrire (programme 411, `GAME00` 1 264, `EVENT00` 204, `GAME01-03` 134, `PACK1` 365). Ordre proposé, du plus utile au plus lourd :
+### Phase 3 — Le jeu en C (mode mixte)  `[x]` terminée  (XL)
+Définition retenue (« A ») : **tout le code du jeu en C, exact et vérifié** — traduit
+automatiquement du MIPS, plus des réécritures lisibles des systèmes utiles aux améliorations de la
+phase 7 ; le reste devient lisible au fil de l'eau, en parallèle de la phase 4.
 - [x] 1re fonction : `func_800A09C0` (cap du joueur) — 7 857 appels comparés, 0 différence ; **rejeu de la session de référence `in_sync` au bit près** avec la fonction réécrite seule (mêmes registres, même coût en cycles) ; version analogique vérifiée à 11 angles *(l'extension analogique appartient à la phase 7, voir plus bas : elle reste désactivée dans la 1.0)*.
-- [ ] Couche entrées complète : mise à jour des manettes, direction, boutons, répétition, vibration (`0x8002A5F0` et voisines) (M).
-- [ ] Boucle principale et gestionnaire d'état du jeu / changement de mode (GAME00 ↔ EVENT00 ↔ GAME01-03) (M).
-- [ ] Chargeur de fichiers et de modules (lecture CD, décompression, `PAK`/`GP`) (L).
-- [ ] Gestion mémoire du jeu (allocation, tas) (M).
-- [ ] Caméra (L).
-- [ ] Entités et physique : Flint (déplacement, attaque, saut), ennemis, objets, collisions (XL).
-- [ ] Scripts de cinématique / moteur d'événements (`EVENT00`) (XL).
-- [ ] Menus, inventaire, boutique, forge, sauvegarde/chargement, options (L).
-- [ ] Rendu du jeu : construction des listes d'ordre, modèles, décors, effets, interface (XL).
-- [ ] Son du jeu : musiques, bruitages, voix, mixage (L).
-- [ ] Mini-jeux et cas particuliers (L).
-- [ ] Lever la limite de 128 remplacements (fork de PSXRecomp, ou passage à la phase 4) (S).
-- [ ] À chaque lot : vérification fonction par fonction + rejeu de scène (niveaux 1 et 2).
-- **Jalon :** 100 % des fonctions du jeu réécrites, mode mixte encore actif pour la bibliothèque PsyQ.
+- [x] Outils : brouillons C par décompilateur (`tools/decompile.py`, m2c), couche commune `src/a2_rewrite.h` (accès mémoire, appels, contrôle fantôme original/réécrit à chaque appel, coût en cycles par bloc avec `tools/block_costs.py`), vérification statique des appels (`tools/check_calls.py`), graphe d'appels (`tools/callgraph.py`), méthode dans `docs/REWRITING.md`.
+- [x] Limite de 128 remplacements levée : 4 096, recherche par table de hachage (patch du framework appliqué à la compilation, `patches/psxrecomp/`) ; rejeu de non-régression identique au bit près.
+- [x] **Tout le code du jeu en C : 2 707 fonctions** — 2 678 traduites par `tools/a2lift.py` (`src/game/lifted/`), 29 réécrites à la main. Le compte a grandi pendant la traduction : 77 fonctions que le découpage n'avait pas vues (atteintes seulement par pointeur, dont les points d'entrée de `GAME00` et `EVENT00`), et 4 bibliothèques en assembleur chargées à `0x80010000` (`AL22`, `PACK0.PAK` entrées 106-109, 256 fonctions). Détails dans `docs/REWRITING.md`.
+- [x] **Vérification** sur deux sessions (14 644 et 19 062 images de jeu ; la seconde parcourt combats et menus) : journal GPU et VRAM **identiques à chaque image**, aucune fonction du jeu exécutée hors du C (`A2_LIFT_COVERAGE`), RAM identique hors des zones de temps documentées (`docs/VERIFICATION.md`).
+- [x] **Lot 1 — couche manette** (15 fonctions, `src/game/input.c`) : contrôlées sur toute la session, **0 différence** ; coûts en cycles exacts, chemin par chemin.
+- [x] **Lot 2 — système** (`src/game/system.c`) : routine du retour vertical, indicateur de chargement, temps de jeu ; coûts exacts (ils tournent dans l'interruption : voir « le bord de `VSync` » dans `docs/VERIFICATION.md`).
+- [x] **Lot 3 — cadence et listes d'affichage** (`GAME00`, `src/game/frame.c`) : fin d'image, `VSync(2)` (25 images/s), double tampon, tables d'ordre et tampons de paquets.
+- [x] **Lot 4 — caméra** (`GAME00`, `src/game/camera.c`) : modes, suivi, orbite, rail, zoom.
+- [x] Ce qui est compris du moteur (modules en mémoire, image de jeu, cadence, tables d'ordre, caméra, projection) : `docs/ENGINE.md`.
+- [ ] À rendre lisible au fil de l'eau (phase 4 en parallèle) : chargeur de fichiers (`func_8001BD5C`, `func_8001BDB0`, `func_8001BCA4`), boucle principale (`main` = `func_8001A99C`, `GAME00` = `func_80089AE8`), projection (`func_8002569C`, `func_80025A9C`, `func_80025B90`), entités et collisions (table `0x8011DCE0`, `func_800A71FC`), rendu des modèles et décors, scripts de cinématique (`EVENT00`), menus, son, mini-jeux.
+- **Jalon atteint :** 100 % des fonctions du jeu en C, mode mixte encore actif pour la bibliothèque PsyQ et la console simulée.
 
 ### Phase 4 — Couche PsyQ native et plateforme  `[ ]`  (XL, en parallèle de la phase 3)
 Remplacer la console simulée par du code PC, module par module. Chaque module est livré et vérifié séparément :
@@ -167,9 +166,10 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 
 | Risque | Effet | Parade |
 |---|---|---|
-| Volume de la réécriture (2 378 fonctions) | durée de plusieurs mois | travail par lots, outils de nommage automatique, vérification automatique, priorité aux parties qui bloquent le reste |
+| Volume de la réécriture (2 707 fonctions) | durée de plusieurs mois | **traduction automatique exacte de tout le code** (fait), puis réécriture lisible par lots, en commençant par ce dont la phase 7 a besoin |
+| Temps de la console simulée : `VSync` à la limite de son délai | une fonction un peu moins chère dans l'interruption fait déborder l'attente | coûts exacts pour le code des interruptions ; disparaît avec `VSync` natif (phase 4) |
 | Code compilé de l'époque (compilateur PsyQ) difficile à relire | fonctions lentes à comprendre | décompilateur MIPS, comparaison automatique, tests d'équivalence |
-| Limite de 128 remplacements simultanés | bloque le mode mixte au-delà | fork du framework ou passage direct à la phase 4 |
+| Limite de 128 remplacements simultanés | bloque le mode mixte au-delà | **résolu** : patch du framework (4 096, table de hachage) |
 | Précision du son (réverbération, séquences) | écart audible avec l'original | journaux SPU/SEQ comparés à l'original |
 | Blocage intermittent du harnais (cartes mémoire) | tests peu fiables | détection complète et relance ; vérifications par rejeu, sans le harnais ; cause non reproduite (13 sessions sans blocage) |
 | Dépendance au Dell G15 pour le test Windows | boucle de test plus lente | compilation croisée depuis le Mac, zip à tester |
@@ -179,9 +179,9 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 
 ## 6. État actuel (résumé)
 
-- **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé (programme, 5 modules `GAME`/`EVENT`, 17 modules de `PACK1`), formats inventoriés, noms de base, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; première fonction réécrite, **identique au bit près** sur la session de référence.
-- **Phase 2 terminée :** bibliothèques Sony reconnues par signature, code du jeu et bibliothèques séparés.
-- **Chiffres :** 3 072 fonctions = **2 378 de jeu** (1 réécrite, 0,04 %) + 694 de bibliothèque (547 reconnues) ; 457 nommées.
+- **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé, formats inventoriés, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; **phase 2** : bibliothèques Sony reconnues par signature, code du jeu et bibliothèques séparés.
+- **Phase 3 terminée :** **tout le code du jeu est en C** (2 707 fonctions : 2 678 traduites, 29 réécrites à la main), vérifié sur deux sessions de référence (GPU et VRAM identiques à chaque image). Réécritures lisibles : manette, système, cadence et listes d'affichage, caméra.
+- **Chiffres :** 3 404 fonctions = **2 707 de jeu** (toutes en C) + 697 de bibliothèque (547 reconnues).
 - **Prochaine étape recommandée (1:1 d'abord) :**
-  1. Réécriture de la couche entrées complète, de la boucle principale et du chargeur (phase 3).
-  2. Démarrer les modules natifs les plus simples (fichiers, entrées, cartes mémoire) pour réduire peu à peu la dépendance à la recompilation (phase 4).
+  1. Phase 4 : modules natifs les plus simples d'abord (fichiers, entrées, cartes mémoire), puis `VSync`/temps, GTE, GPU, son.
+  2. En parallèle : rendre lisibles le chargeur, la boucle principale, la projection et les entités.

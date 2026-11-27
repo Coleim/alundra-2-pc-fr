@@ -11,15 +11,29 @@ Facts established from the disc and from a play session of the recompiled build.
 | `EVENT00.BIN` | `0x80084ED0` | `0x77000` | cutscene overlay, replaces GAME00 at the same address |
 | `GAME01/02/03.BIN` | `0x80084ED0` | `0x70888` / `0x76248` / `0x5FCF8` | same slot; code only in the first 35 / 29 / 25 KiB |
 | `PACK1.PAK` entries 1, 2, 11, 13, 17, 18, 21, 23-26, 30-35 | `0x80149AE8` | 4-45 KiB | 17 interchangeable code modules |
+| `PACK0.PAK` entries 106-109 | `0x80010000` | 25-27 KiB | `AL22` libraries: four variants of a hand-written assembly library (header `AL22`, a variant number, 20 jump slots `j target; nop` at `0x80010008 + 8n`, then the code); the game calls the slots (`0x80010008`, `0x80010010`...) for vector and matrix helpers, collision tests and projection set-up |
 
 The `GAME01-03` base was confirmed by the internal calls (all 481 / 398 / 329 `jal` resolve into the
 module or the main program). The `PACK1` base comes from code snapshots taken in a play session
 (entry 35 = file offset + `0x80119A4C`, entry 34 = file offset + `0x8011B988`, both `0x80149AE8`).
 The other `PAK` and `GP` archives are data, loaded to varying addresses (`symbols/cd_loads.json`).
 
-Function counts (splat, `tools/progress.py`): main 1105, GAME00 1264, EVENT00 204, GAME01 68,
-GAME02 36, GAME03 30, PACK1 modules 365; total 3072. Game code 2378, PsyQ library 694 (main
-executable only, from `0x80031258`; 547 functions recognised by signature, see `docs/LIBRARIES.md`).
+Function counts (splat, `tools/progress.py`): main 1104, GAME00 1332, EVENT00 213, GAME01 68,
+GAME02 36, GAME03 30, PACK1 modules 365, AL22 libraries 4 x 64; total 3404. Game code 2707,
+PsyQ library 697 (main executable only, from `0x80031228`; 547 functions recognised by signature,
+see `docs/LIBRARIES.md`).
+
+### Functions reached only through pointers
+
+splat starts a function at a symbol or a `jal` target. Functions only reached through a pointer
+stayed glued to the end of the previous function: `tools/find_hidden_functions.py` finds them by
+reachability (the code a function cannot reach from its entry, after its last reachable
+instruction) and writes them to the symbol files (`symbols/game00_symbols.txt`,
+`symbols/event00_symbols.txt`, `symbols/al22_*_symbols.txt`): 68 in GAME00, 9 in EVENT00, 12 in the
+AL22 libraries. Among them, the entry points of the field and cutscene modules: the main
+executable keeps a table of (file name, entry) pairs at `0x800521F0` (GAME00 `0x80089AE8`,
+EVENT00 `0x80087848`, ...). EVENT00's code also starts before its first known function (the
+entry `0x80087848` was decoded as data) and ends after the configured segment (`0x800AB214`).
 
 ## Archives
 

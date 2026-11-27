@@ -92,3 +92,6 @@ starvation_dump.jsonl
 /.venv-decomp/
 /decomp-build/
 /decomp/
+
+# Game code translated from the disc by tools/a2lift.py (regenerated locally)
+/src/game/lifted/

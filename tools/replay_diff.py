@@ -4,7 +4,10 @@
 Run A is the reference (usually the original code), run B the candidate (rewritten code).
 Both play the replay headless with the traces of src/a2_diag.c, compared at every waiting
 VSync call, level by level:
-  ram    hash of each 4 KiB page of main RAM (game state)
+  ram    hash of each 4 KiB page of main RAM (game state: kernel work area, dead stack below
+         $sp and A2_DIAG_IGNORE ranges count as zero)
+  noise  the words excluded from "ram" (register save areas, stack residue)
+  gpu-irq  what interrupt handlers sent to the GPU (depends on timing: informative)
   gpu    what the game sent to the GPU during the frame (ordering tables, draw
          environments, VRAM transfers)
   vram   the whole VRAM (the picture)
@@ -20,18 +23,21 @@ Exit status: 0 identical (cycles aside), 1 different, 2 failure.
 import argparse
 import difflib
 import os
+import random
 import struct
 import subprocess
 import sys
+import time
 
 PAGE = 4096
 RAM_BASE = 0x80000000
 
 
 ISOLATE = None
+TIMEOUT = 2400
 
 
-def run(exe, game, replay, env_pairs, trace, stop=None, dump_at=None, gpu_dump_at=None):
+def run(exe, game, replay, env_pairs, trace, stop=None, dump_at=None, gpu_dump_at=None, port=None):
     env = dict(os.environ, A2_DIAG_TRACE=trace, PSX_REPLAY_EXIT_AT_END="1")
     for kv in env_pairs:
         k, _, v = kv.partition("=")
@@ -43,11 +49,24 @@ def run(exe, game, replay, env_pairs, trace, stop=None, dump_at=None, gpu_dump_a
     if gpu_dump_at:
         env["A2_DIAG_GPU_DUMP_AT"] = ",".join(str(i) for i in gpu_dump_at)
     cmd = [exe, "--headless", "--game", os.path.abspath(game), "--replay", replay, "--replay-fast"]
-    if ISOLATE:
-        cards = os.path.abspath(os.path.join(os.path.dirname(trace), "cards"))
+    port = port or ISOLATE
+    if port:
+        cards = os.path.abspath(os.path.join(os.path.dirname(trace), f"cards-{port}"))
         os.makedirs(cards, exist_ok=True)
-        cmd += ["--debug-port", str(ISOLATE), "--memcard-dir", cards]
-    subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cmd += ["--debug-port", str(port), "--memcard-dir", cards]
+    for attempt in range(4):
+        if os.path.exists(trace):
+            os.remove(trace)
+        log = open(trace + ".log", "w")              # runtime output, for crashes and summaries
+        try:
+            p = subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            print(f"{trace}: runtime killed after {TIMEOUT}s (hung or halted, see {trace}.log)")
+            return
+        # simultaneous starts can be refused ("cannot publish state"): exit 1, empty trace
+        if p.returncode != 1 or (os.path.exists(trace) and os.path.getsize(trace) > 64):
+            break
+        time.sleep(5 + 7 * attempt + random.random() * 5)
 
 
 def read_trace(path):
@@ -57,7 +76,7 @@ def read_trace(path):
     if magic == 0x54523241:                       # "A2RT": index, cycle, pages
         pages, = struct.unpack_from("<I", data, 4)
         fields, off = 3, 8
-    elif magic == 0x32523241:                     # "A2R2": + gpu hash, gpu items, vram hash
+    elif magic in (0x32523241, 0x33523241, 0x34523241):  # A2R2: + gpu, items, vram; A2R3: + noise; A2R4: + gpu irq
         pages, fields = struct.unpack_from("<2I", data, 4)
         off = 12
     else:
@@ -69,6 +88,10 @@ def read_trace(path):
         r = {"cycle": w[1] | (w[2] << 32), "pages": w[fields:]}
         if fields >= 6:
             r.update(gpu=w[3], items=w[4], vram=w[5])
+        if fields >= 7:
+            r["noise"] = w[6]
+        if fields >= 8:
+            r["gpu-irq"] = w[7]
         recs[w[0]] = r
     return recs
 
@@ -140,7 +163,7 @@ def main():
     ra, rb = read_trace(ta), read_trace(tb)
     print(f"VSync records: A={len(ra)} B={len(rb)}")
     diffs = {}
-    for level in ("ram", "gpu", "vram", "cycle"):
+    for level in ("ram", "gpu", "vram", "gpu-irq", "noise", "cycle"):
         d = first_difference(ra, rb, level)
         diffs[level] = d
         if d is None:

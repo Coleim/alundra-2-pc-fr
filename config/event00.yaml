@@ -36,5 +36,5 @@ segments:
     subsegments:
       - [0x0, data, head]
       - [0x2800, asm, code]
-      - [0x26000, data, tail]
+      - [0x26344, data, tail]
   - [0x77168]
