@@ -46,6 +46,7 @@
 
 uint8_t psx_read_byte(uint32_t addr);
 uint32_t psx_read_word(uint32_t addr);
+uint16_t psx_read_half(uint32_t addr);
 
 extern const uint8_t *replay_host_ram(void);
 extern uint64_t replay_host_cycle(void);
@@ -81,6 +82,12 @@ extern const uint16_t *gpu_get_vram(void);
 
 static FILE *s_trace;
 void (*s_stop_report)(void);              /* a summary to print before an early stop */
+static void (*s_stop_reports[8])(void);   /* more of them */
+static int s_n_stop_reports;
+static void s_stop_report_chain(void (*fn)(void))
+{
+    if (s_n_stop_reports < 8) s_stop_reports[s_n_stop_reports++] = fn;
+}
 static FILE *s_gpu_text;
 static char s_path[1024];
 static uint32_t s_index;
@@ -390,6 +397,7 @@ static int vsync_hook(CPUState *cpu)
         fflush(NULL);
         void (*report)(void) = s_stop_report;
         if (report) report();
+        for (int i = 0; i < s_n_stop_reports; ++i) s_stop_reports[i]();
         _exit(0);
     }
     s_index++;
@@ -476,4 +484,81 @@ static void a2_register_diag(void)
     func_override_add("a2.diag.draw_prim", DRAW_PRIM_ADDR, draw_prim_hook, 0);
     func_override_add("a2.diag.put_dispenv", PUT_DISPENV_ADDR, put_dispenv_hook, 0);
     func_override_add("a2.diag.set_disp_mask", SET_DISP_MASK_ADDR, set_disp_mask_hook, 0);
+}
+
+/* A2_DIAG_LIBCOUNT=file: count the calls of the functions listed in `file` ("ADDR NAME" per
+ * line, the PsyQ library), printed at exit: which library the game really uses. */
+typedef struct { uint32_t addr; char name[40]; uint64_t calls; } LibCount;
+static LibCount *s_lib;
+static int s_n_lib;
+
+static int libcount_hook(CPUState *cpu)
+{
+    (void)cpu;
+    const uint32_t a = func_override_active_address();
+    for (int lo = 0, hi = s_n_lib - 1; lo <= hi;) {
+        const int mid = (lo + hi) / 2;
+        const uint32_t m = s_lib[mid].addr & 0x1FFFFFFFu;
+        if (m == (a & 0x1FFFFFFFu)) { s_lib[mid].calls++; break; }
+        if (m < (a & 0x1FFFFFFFu)) lo = mid + 1; else hi = mid - 1;
+    }
+    return 0;
+}
+
+static int libcount_cmp(const void *x, const void *y)
+{
+    const LibCount *a = x, *b = y;
+    return a->calls < b->calls ? 1 : a->calls > b->calls ? -1 : 0;
+}
+
+static void libcount_report(void)
+{
+    qsort(s_lib, (size_t)s_n_lib, sizeof *s_lib, libcount_cmp);
+    for (int i = 0; i < s_n_lib && s_lib[i].calls; ++i)
+        fprintf(stderr, "a2.lib %08X %-24s %llu\n", s_lib[i].addr, s_lib[i].name,
+                (unsigned long long)s_lib[i].calls);
+}
+
+__attribute__((constructor))
+static void a2_register_libcount(void)
+{
+    const char *path = getenv("A2_DIAG_LIBCOUNT");
+    FILE *f = path && path[0] ? fopen(path, "r") : NULL;
+    if (!f) return;
+    s_lib = calloc(1024, sizeof *s_lib);
+    unsigned addr;
+    char name[40];
+    while (s_lib && s_n_lib < 1024 && fscanf(f, "%x %39s", &addr, name) == 2) {
+        s_lib[s_n_lib].addr = addr;
+        snprintf(s_lib[s_n_lib].name, sizeof s_lib[s_n_lib].name, "%s", name);
+        s_n_lib++;
+    }
+    fclose(f);
+    for (int i = 0; i < s_n_lib; ++i)
+        func_override_add(s_lib[i].name, s_lib[i].addr, libcount_hook, 0);
+    atexit(libcount_report);
+    s_stop_report_chain(libcount_report);
+}
+
+/* A2_DIAG_STREAM=1: the movie streaming ring (libcd St*) at each sector interrupt and
+ * StGetNext, to compare the standalone engine's CD drive with the framework's. */
+static int stream_hook(CPUState *cpu)
+{
+    (void)cpu;
+    const uint32_t a = func_override_active_address();
+    const uint32_t base = psx_read_word(0x8007F578u);
+    fprintf(stderr, "a2.stream %s:", a == 0x80043F88u ? "int" : "get");
+    for (int i = 0; i < 12 && base; ++i)
+        fprintf(stderr, " %x/%u", psx_read_half(base + 32u * (uint32_t)i), psx_read_half(base + 32u * (uint32_t)i + 4));
+    fprintf(stderr, " F554=%u F540=%u\n", psx_read_word(0x8007F554u), psx_read_word(0x8007F540u));
+    return 0;
+}
+
+__attribute__((constructor))
+static void a2_register_stream(void)
+{
+    const char *e = getenv("A2_DIAG_STREAM");
+    if (!e || e[0] != '1') return;
+    func_override_add("a2.diag.st_int", 0x80043F88u, stream_hook, 0);
+    func_override_add("a2.diag.st_get", 0x8003AF58u, stream_hook, 0);
 }

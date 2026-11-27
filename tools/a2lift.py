@@ -38,6 +38,7 @@ def lib_start():
 REG = ["zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6",
        "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp",
        "fp", "ra"]
+SETJMP = 0x80032A58                       # PsyQ setjmp in SLES_026.01
 GTE_DATA_READ_HELPER = 0xB08F8FAA
 GTE_DATA_WRITE_HELPER = 0xF08FFFAA
 GTE_CTRL_HELPER = 0xEC101010
@@ -167,8 +168,9 @@ LINE = re.compile(r"^\s+/\* [0-9A-F]+ ([0-9A-F]{8}) ([0-9A-F]{8}) \*/\s*(.*)$")
 
 
 def parse_asm(path):
-    """[(name, [(addr, word, text)])] in file order."""
-    funcs, cur = [], None
+    """[(name, [(addr, word, text)])] in file order. Instructions splat left between two
+    functions join the previous one when its code runs on into them."""
+    funcs, cur, orphans = [], None, {}
     for line in open(path):
         m = GLABEL.match(line)
         if m:
@@ -179,9 +181,26 @@ def parse_asm(path):
             cur = None
             continue
         m = LINE.match(line)
-        if m and cur is not None:
+        if m:
             raw = bytes.fromhex(m.group(2))
-            funcs[-1][1].append((int(m.group(1), 16), struct.unpack("<I", raw)[0], m.group(3).strip()))
+            row = (int(m.group(1), 16), struct.unpack("<I", raw)[0], m.group(3).strip())
+            if cur is not None:
+                funcs[-1][1].append(row)
+            elif funcs:
+                orphans.setdefault(len(funcs) - 1, []).append(row)
+    for k, rows in orphans.items():
+        body = funcs[k][1]
+        if len(body) < 2 or rows[0][0] != body[-1][0] + 4:
+            continue
+        last = Insn(*body[-2])
+        if last.is_jump() and last.op != 3 and not (last.op == 0 and last.fn == 9):
+            continue                                   # ends with its return: padding after it
+        run = [rows[0]]
+        for row in rows[1:]:
+            if row[0] != run[-1][0] + 4:
+                break
+            run.append(row)
+        body.extend(run)
     return [f for f in funcs if f[1]]
 
 
@@ -309,9 +328,9 @@ def stmt(i):
             return f"DIV({r(rs)}, {r(rt)});"
         if fn == 0x1B:
             return f"DIVU({r(rs)}, {r(rt)});"
-        if fn == 0x21:
+        if fn in (0x20, 0x21):                       # add (its overflow trap never fires) / addu
             return assign(rd, f"{r(rs)} + {r(rt)}")
-        if fn == 0x23:
+        if fn in (0x22, 0x23):                       # sub / subu
             return assign(rd, f"{r(rs)} - {r(rt)}")
         if fn == 0x24:
             return assign(rd, f"{r(rs)} & {r(rt)}")
@@ -328,7 +347,7 @@ def stmt(i):
         if fn == 0x0D:                                # break: compiler checks (division by zero)
             return f"return a2_break(cpu, 0x{(i.word >> 6) & 0xFFFFF:X}u, {hx(i.addr)});"
         raise Unsupported(f"special fn {fn:#x}")      # add/sub (trapping), syscall
-    if op == 9:
+    if op in (8, 9):                                 # addi (no overflow in practice) / addiu
         if rs == 0:
             return assign(rt, hx(i.imm)) + note(i)
         if i.imm == 0:
@@ -356,6 +375,12 @@ def stmt(i):
         return f"SWL({addr_expr(i)}, {r(rt)});"
     if op == 0x2E:
         return f"SWR({addr_expr(i)}, {r(rt)});"
+    if op == 0x10:                                   # cop0: status and cause moves
+        if i.rs == 0:
+            return assign(rt, f"cpu->cop0[{i.rd}]")
+        if i.rs == 4:
+            return f"cpu->cop0[{i.rd}] = {r(rt)};"
+        raise Unsupported(f"cop0 {i.word:08X}")
     if op == 0x12:
         if i.rs == 4:
             return f"GTE_MTC2({i.rd}, {r(rt)});" if (GTE_DATA_WRITE_HELPER >> i.rd) & 1 \
@@ -458,6 +483,18 @@ class Lifter:
                 self.tables[best] = entries
         return best
 
+    def const_target(self, jr):
+        """Target of a `jr` whose register was just set to a constant in the same block."""
+        k = self.insns.index(jr)
+        for i in reversed(self.insns[max(0, k - 4):k]):
+            if i.is_cti():
+                return None
+            if i.dest() == jr.rs:
+                if i.op == 9 and i.rs == 0:
+                    return i.imm & 0xFFFFFFFF
+                return None
+        return None
+
     def leaders(self):
         lead = {self.start} | set(self.entries)
         for i in self.insns:
@@ -473,7 +510,7 @@ class Lifter:
             elif i.is_jump():
                 if i.op == 2 and self.inside(i.target):
                     lead.add(i.target)
-                if i.op == 0 and i.fn == 8 and i.rs != 31:
+                if i.op == 0 and i.fn == 8 and i.rs != 31 and self.const_target(i) is None:
                     tbl = self.table_for(i)
                     if tbl is None or tbl not in self.tables:
                         raise Unsupported(f"jr {REG[i.rs]} without jump table at {i.addr:08X}")
@@ -482,7 +519,15 @@ class Lifter:
                             raise Unsupported(f"jump table target outside at {i.addr:08X}")
                         lead.add(t)
                 lead.add(i.addr + 8)
-        return sorted(a for a in lead if self.inside(a))
+        # a jump to a delay slot (hand-written assembly): that instruction runs on its own,
+        # then the code continues after it
+        self.ds_entries = set()
+        for a in list(lead):
+            prev = self.by_addr.get(a - 4)
+            if a != self.start and prev is not None and prev.is_cti() and self.inside(a):
+                self.ds_entries.add(a)
+                lead.add(a + 4)
+        return sorted(a for a in lead if self.inside(a) and a not in self.ds_entries)
 
     def falls_through(self):
         """The code runs past the last instruction into the next function (splat cut there)."""
@@ -497,7 +542,7 @@ class Lifter:
                 d = self.by_addr.get(i.addr + 4)
                 if d is None or d.is_cti():
                     raise Unsupported(f"delay slot at {i.addr + 4:08X}")
-            if i.op in (0x10, 0x11, 0x13) or (i.op == 0 and i.fn in (0x0C, 0x20, 0x22)) or i.op == 8:
+            if i.op in (0x11, 0x13) or (i.op == 0 and i.fn == 0x0C) or (i.op == 0x10 and i.rs not in (0, 4)):
                 raise Unsupported(f"instruction {i.word:08X} at {i.addr:08X}")
 
     def pending_load_slots(self):
@@ -584,6 +629,18 @@ class Lifter:
                 if cancel and m == 0:              # it overwrites the pending load's register
                     out(f"    psx_load_value_cancel(cpu, {cancel}u);")
                 m += 1
+            last = block[-1]
+            if last.addr in self.ds_entries and len(block) >= 2 and block[-2].is_cti():
+                if last.is_delayed_read() or last.is_cti():
+                    raise Unsupported(f"jump into a delay slot load at {last.addr:08X}")
+                if not self.inside(last.addr + 4):
+                    raise Unsupported(f"jump into the last delay slot at {last.addr:08X}")
+                self.labels_used.update((last.addr, last.addr + 4))
+                out(f"L_{last.addr:08X}:")
+                if not PRECISE:
+                    out(f"    A2_SPAN({span_cost([last])});")
+                out(f"    {self.timing(last)}{stmt(last)}")
+                out(f"    goto L_{last.addr + 4:08X};")
             k = j
         return lines
 
@@ -705,6 +762,11 @@ class Lifter:
                 out.append(f"      {self.delay_stmt(d, True)}")
                 out.append("      A2_EDGE(t_); A2_RETURN(t_); }")
                 return out
+            ct = self.const_target(i)
+            if ct is not None:                      # BIOS call: tail call to its vector
+                out.append(f"{pre}{self.timing(i)}{self.delay_stmt(d, True)}")
+                out.append(f"    A2_EDGE({hx(ct)}); a2_tail(cpu, {hx(ct)}); return 1;")
+                return out
             tbl = self.table_for(i)
             targets = list(dict.fromkeys(self.tables[tbl]))
             ds = self.delay_stmt(d, False)
@@ -765,6 +827,9 @@ def units(bodies, names, skip, pointers=()):
     for k, b in enumerate(bodies):
         lo, hi = spans[k]
         for i in b:
+            # after setjmp, a longjmp resumes the code here: the standalone engine enters it
+            if i.op == 3 and i.target == SETJMP and lo <= i.addr + 8 < hi:
+                inner[k].add(i.addr + 8)
             if i.is_branch() and not (i.op == 1 and i.rt in (0x10, 0x11)):
                 t = i.branch_target()
             elif i.op == 2:
@@ -872,10 +937,15 @@ def main():
     seen = {}
     global PRECISE
     lib_base = lib_start()
+    passes = []
     for mod, path, skip_bytes, base, asm in modules():
+        passes.append((mod, path, skip_bytes, base, asm))
+        if mod == "main":                    # the PsyQ library of the main executable: own files
+            passes.append(("lib", path, skip_bytes, base, asm))
+    for mod, path, skip_bytes, base, asm in passes:
         if wanted and mod not in wanted:
             continue
-        PRECISE = mod != "main"              # main: compiled code (spans); overlays: interpreter
+        PRECISE = mod not in ("main", "lib")  # main: compiled code (spans); overlays: interpreter
         if not os.path.exists(asm):
             continue
         funcs = parse_asm(asm)
@@ -892,7 +962,7 @@ def main():
         for name, rows in funcs:
             insns = [Insn(addr, word, text) for addr, word, text in rows]
             start, end = insns[0].addr, insns[-1].addr + 4
-            if mod == "main" and start >= lib_base:
+            if (mod == "main") != (start < lib_base) and mod in ("main", "lib"):
                 continue
             if all(i.word == 0 for i in insns):     # alignment padding, not a function
                 continue
@@ -992,7 +1062,7 @@ def main():
             with open(os.path.join(a.out, f"{mod}_{n:02d}.c"), "w") as f:
                 f.write(f"/* Lifted from {mod} by tools/a2lift.py - do not edit by hand: rewrite the\n"
                         f" * function in src/game/ instead (A2_REWRITE wins over the lifted version). */\n")
-                if mod != "main":
+                if mod not in ("main", "lib"):
                     f.write("#define A2_LIFT_PRECISE 1   /* overlay code: the interpreter's per-instruction timing */\n")
                 f.write('#include "../../a2_lift.h"\n\n')
                 for _, fn in chunk:

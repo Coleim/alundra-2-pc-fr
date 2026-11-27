@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "a2_lift.h"
+#include "native/gte.h"
 
 extern const A2LiftEntry *const a2_lift_tables[];
 extern uint32_t psx_peek_word_untraced(uint32_t addr);
@@ -186,6 +187,8 @@ static void a2_lift_register(void)
     if ((e = getenv("A2_LIFTED")) && e[0] == '0') return;
     const int main_only = e && !strcmp(e, "main");
     const char *disable = getenv("A2_DISABLE");
+    const char *ll = getenv("A2_LIFT_LIB");
+    const int lift_lib = ll && ll[0] == '1';     /* the library's translation (standalone engine) */
     if ((e = getenv("A2_LIFT_COVERAGE")) && e[0] == '1') {
         extern void (*s_stop_report)(void);
         s_coverage = 1;
@@ -201,6 +204,7 @@ static void a2_lift_register(void)
         for (const A2LiftEntry *x = *t; x->addr; ++x) {
             if (listed(disable, x->name) != x->handwritten) continue;   /* the hand-written one runs */
             if (main_only && x->addr >= 0x80060000u) continue;   /* overlays load from 0x80084ED0 */
+            if (x->addr >= 0x80031228u && x->addr < 0x8005D800u && !lift_lib) continue;   /* PsyQ library */
             Candidate **c = lookup(x->addr, 1);
             if (!*c && func_override_add(x->name, x->addr, lift_dispatch, FO_CREDIT_SELF) != FO_OK)
                 continue;                   /* address already owned (hand-written rewrite) */
@@ -260,4 +264,62 @@ int a2_fallthrough(CPUState *cpu, uint32_t next)
 {
     func_override_guest_call(cpu, next, cpu->gpr[31]);
     return 1;
+}
+
+/* ---- A2_GTE_CHECK=1: run every GTE command of the translated code also on src/native/gte.c,
+ * from the same registers, and compare all 64 registers as the CPU reads them. */
+static int s_gte_check = -1;
+static uint64_t s_gte_cmds, s_gte_bad;
+
+static void gte_check_report(void)
+{
+    fprintf(stderr, "a2.gte: %llu commands compared, %llu different\n", (unsigned long long)s_gte_cmds,
+            (unsigned long long)s_gte_bad);
+}
+
+void a2_gte_cmd(CPUState *cpu, uint32_t cmd)
+{
+    if (s_gte_check < 0) {
+        const char *e = getenv("A2_GTE_CHECK");
+        s_gte_check = e && e[0] == '1';
+        if (s_gte_check) {
+            extern void (*s_stop_report)(void);
+            atexit(gte_check_report);
+            if (!s_stop_report) s_stop_report = gte_check_report;
+        }
+    }
+    if (!s_gte_check) { gte_execute(cpu, cmd); return; }
+    uint32_t d[32] = { 0 }, c[32] = { 0 };
+    for (int r = 0; r < 32; ++r) {
+        if (r == 15 || r == 28 || r == 29 || r == 31) continue;
+        a2gte_write_data(d, r, gte_read_data(cpu, (uint8_t)r));
+    }
+    for (int r = 0; r < 32; ++r) a2gte_write_ctrl(c, r, gte_read_ctrl(cpu, (uint8_t)r));
+    uint32_t in_d[32], in_c[32];
+    memcpy(in_d, d, sizeof d);
+    memcpy(in_c, c, sizeof c);
+    gte_execute(cpu, cmd);
+    a2gte_execute(d, c, cmd);
+    s_gte_cmds++;
+    int bad = 0;
+    for (int r = 0; r < 32; ++r) {
+        const uint32_t x = gte_read_data(cpu, (uint8_t)r), y = a2gte_read_data(d, r);
+        if (x != y && bad++ < 6 && s_gte_bad < 20)
+            fprintf(stderr, "a2.gte cmd %08x: data %d framework=%08x native=%08x\n", cmd, r, x, y);
+    }
+    for (int r = 0; r < 32; ++r) {
+        const uint32_t x = gte_read_ctrl(cpu, (uint8_t)r), y = a2gte_read_ctrl(c, r);
+        if (x != y && bad++ < 6 && s_gte_bad < 20)
+            fprintf(stderr, "a2.gte cmd %08x: ctrl %d framework=%08x native=%08x\n", cmd, r, x, y);
+    }
+    if (bad) {
+        if (s_gte_bad < 20) {
+            fprintf(stderr, "a2.gte   input data:");
+            for (int r = 0; r < 32; ++r) fprintf(stderr, " %08x", in_d[r]);
+            fprintf(stderr, "\na2.gte   input ctrl:");
+            for (int r = 0; r < 32; ++r) fprintf(stderr, " %08x", in_c[r]);
+            fprintf(stderr, "\n");
+        }
+        s_gte_bad++;
+    }
 }

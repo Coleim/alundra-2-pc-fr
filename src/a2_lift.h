@@ -14,6 +14,9 @@
 
 #include <stdint.h>
 
+#ifdef A2_STANDALONE
+#include "native/a2_native.h"          /* the game's own engine: no console simulation */
+#else
 #include "cpu_state.h"
 #include "psx_cycles.h"
 #include "psx_cyc.h"
@@ -23,6 +26,7 @@
 #include "func_override.h"
 #ifndef A2_LIFT_PRECISE
 #include "psx_native_span.h"
+#endif
 #endif
 
 typedef struct {
@@ -45,7 +49,77 @@ int a2_bad_jump(CPUState *cpu, uint32_t target);
 int a2_fell_off(CPUState *cpu);
 int a2_break(CPUState *cpu, uint32_t code, uint32_t pc);
 int a2_fallthrough(CPUState *cpu, uint32_t next);
+#ifndef A2_STANDALONE
+void a2_gte_cmd(CPUState *cpu, uint32_t cmd);
+#endif
 
+/* unaligned word loads (lwl / lwr): merge the loaded word into the register */
+static inline uint32_t a2_lwl_word(uint32_t cur, uint32_t addr, uint32_t w)
+{
+    switch (addr & 3u) {
+    case 0: return (cur & 0x00FFFFFFu) | (w << 24);
+    case 1: return (cur & 0x0000FFFFu) | (w << 16);
+    case 2: return (cur & 0x000000FFu) | (w << 8);
+    default: return w;
+    }
+}
+static inline uint32_t a2_lwr_word(uint32_t cur, uint32_t addr, uint32_t w)
+{
+    switch (addr & 3u) {
+    case 0: return w;
+    case 1: return (cur & 0xFF000000u) | (w >> 8);
+    case 2: return (cur & 0xFFFF0000u) | (w >> 16);
+    default: return (cur & 0xFFFFFF00u) | (w >> 24);
+    }
+}
+#ifdef A2_STANDALONE
+/* The standalone engine keeps no cycle count: memory is read and written directly, the GTE
+ * is src/native/gte.c, and interrupts (vertical blank, CD, GPU) are delivered at control
+ * transfers (A2_EDGE) when one is pending. */
+#define A2_ENTER()    ((void)0)
+#define A2_SPAN(n)    ((void)0)
+#define A2_SYNC()     psx_load_value_begin(cpu)
+#define A2_EDGE(pc)   a2n_edge(cpu)
+#define A2_RETURN(t)  return a2_return(cpu, (t))
+#define F(pc)   ((void)0)
+#define B(pc)   ((void)0)
+#define S(w)    ((void)0)
+#ifdef A2_LIFT_PRECISE
+#define LW(a, rt, w)   a2n_r32(a)
+#define LHU(a, rt, w)  ((uint32_t)a2n_r16(a))
+#define LH(a, rt, w)   ((uint32_t)(int32_t)(int16_t)a2n_r16(a))
+#define LBU(a, rt, w)  ((uint32_t)a2n_r8(a))
+#define LB(a, rt, w)   ((uint32_t)(int32_t)(int8_t)a2n_r8(a))
+#define LWL(a, cur, rt, w) a2_lwl_word((cur), (a), a2n_r32((a) & ~3u))
+#define LWR(a, cur, rt, w) a2_lwr_word((cur), (a), a2n_r32((a) & ~3u))
+#else
+#define LW(a)   a2n_r32(a)
+#define LHU(a)  ((uint32_t)a2n_r16(a))
+#define LH(a)   ((uint32_t)(int32_t)(int16_t)a2n_r16(a))
+#define LBU(a)  ((uint32_t)a2n_r8(a))
+#define LB(a)   ((uint32_t)(int32_t)(int8_t)a2n_r8(a))
+#define LWL(a, cur, rt) a2_lwl_word((cur), (a), a2n_r32((a) & ~3u))
+#define LWR(a, cur, rt) a2_lwr_word((cur), (a), a2n_r32((a) & ~3u))
+#endif
+#define SW(a, v) a2n_w32((a), (v))
+#define SH(a, v) a2n_w16((a), (uint16_t)(v))
+#define SB(a, v) a2n_w8((a), (uint8_t)(v))
+#define SWL(a, v) a2n_w32((a) & ~3u, a2n_swl_word(a2n_r32((a) & ~3u), (a), (v)))
+#define SWR(a, v) a2n_w32((a) & ~3u, a2n_swr_word(a2n_r32((a) & ~3u), (a), (v)))
+#define A2_MULDIV_SET(lat) ((void)0)
+#define MULDIV_STALL() ((void)0)
+#define GTE_STALL()        ((void)0)
+#define GTE_READ(rt)       ((void)0)
+#define GTE_MFC2(rd)       gte_read_data(cpu, (rd))
+#define GTE_CFC2(rd)       gte_read_ctrl(cpu, (rd))
+#define GTE_MTC2(rd, v)    gte_write_data(cpu, (rd), (v))
+#define GTE_CTC2(rd, v)    gte_write_ctrl(cpu, (rd), (v))
+#define GTE_CMD(c)         gte_execute(cpu, (c))
+#define LWC2(rt, a)        (cpu->gte_data[rt] = a2n_r32(a))
+#define LWC2_HELPER(rt, a) gte_write_data(cpu, (rt), a2n_r32(a))
+#define SWC2(rt, a)        a2n_w32((a), cpu->gte_data[rt])
+#define SWC2_HELPER(rt, a) do { const uint32_t a_ = (a); a2n_w32(a_, gte_read_data(cpu, (rt))); } while (0)
+#else
 /* timing and interrupts, as in the framework's compiled code */
 #define A2_ENTER()                                                                         \
     __attribute__((cleanup(psx_cyc_bb_defer_cleanup))) int a2_defer_ = 1;                  \
@@ -84,24 +158,6 @@ int a2_fallthrough(CPUState *cpu, uint32_t next);
 #define SH(a, v) (psx_store_cycle_barrier(), cpu->write_half((a), (uint16_t)(v)))
 #define SB(a, v) (psx_store_cycle_barrier(), cpu->write_byte((a), (uint8_t)(v)))
 
-static inline uint32_t a2_lwl_word(uint32_t cur, uint32_t addr, uint32_t w)
-{
-    switch (addr & 3u) {
-    case 0: return (cur & 0x00FFFFFFu) | (w << 24);
-    case 1: return (cur & 0x0000FFFFu) | (w << 16);
-    case 2: return (cur & 0x000000FFu) | (w << 8);
-    default: return w;
-    }
-}
-static inline uint32_t a2_lwr_word(uint32_t cur, uint32_t addr, uint32_t w)
-{
-    switch (addr & 3u) {
-    case 0: return w;
-    case 1: return (cur & 0xFF000000u) | (w >> 8);
-    case 2: return (cur & 0xFFFF0000u) | (w >> 16);
-    default: return (cur & 0xFFFFFF00u) | (w >> 24);
-    }
-}
 static inline void a2_swl(CPUState *cpu, uint32_t addr, uint32_t v)
 {
     psx_store_cycle_barrier();
@@ -137,44 +193,47 @@ static inline void a2_swr(CPUState *cpu, uint32_t addr, uint32_t v)
 #endif
 #define SWL(a, v)       a2_swl(cpu, (a), (v))
 #define SWR(a, v)       a2_swr(cpu, (a), (v))
-
-/* multiply / divide (results in HI/LO, completion deadline as in compiled code) */
 #define MULDIV_STALL()  psx_muldiv_stall(cpu)
+#define A2_MULDIV_SET(lat) psx_muldiv_set(cpu, (lat))
+#endif /* A2_STANDALONE */
+
+/* multiply / divide (results in HI/LO; the framework also keeps their completion time) */
 #define MULT(x, y) do {                                                                     \
         const uint32_t x_ = (x), y_ = (y);                                                  \
         const int64_t p_ = (int64_t)(int32_t)x_ * (int64_t)(int32_t)y_;                     \
         cpu->lo = (uint32_t)p_; cpu->hi = (uint32_t)((uint64_t)p_ >> 32);                   \
-        psx_muldiv_set(cpu, psx_mult_latency_s(x_)); } while (0)
+        A2_MULDIV_SET(psx_mult_latency_s(x_)); } while (0)
 #define MULTU(x, y) do {                                                                    \
         const uint32_t x_ = (x), y_ = (y);                                                  \
         const uint64_t p_ = (uint64_t)x_ * (uint64_t)y_;                                    \
         cpu->lo = (uint32_t)p_; cpu->hi = (uint32_t)(p_ >> 32);                             \
-        psx_muldiv_set(cpu, psx_mult_latency_u(x_)); } while (0)
+        A2_MULDIV_SET(psx_mult_latency_u(x_)); } while (0)
 #define DIV(x, y) do {                                                                      \
         const uint32_t x_ = (x), y_ = (y);                                                  \
         if (y_ == 0) { cpu->lo = (int32_t)x_ >= 0 ? 0xFFFFFFFFu : 1u; cpu->hi = x_; }       \
         else if (x_ == 0x80000000u && y_ == 0xFFFFFFFFu) { cpu->lo = x_; cpu->hi = 0; }     \
         else { cpu->lo = (uint32_t)((int32_t)x_ / (int32_t)y_);                             \
                cpu->hi = (uint32_t)((int32_t)x_ % (int32_t)y_); }                           \
-        psx_muldiv_set(cpu, 37u); } while (0)
+        A2_MULDIV_SET(37u); } while (0)
 #define DIVU(x, y) do {                                                                     \
         const uint32_t x_ = (x), y_ = (y);                                                  \
         if (y_ == 0) { cpu->lo = 0xFFFFFFFFu; cpu->hi = x_; }                               \
         else { cpu->lo = x_ / y_; cpu->hi = x_ % y_; }                                      \
-        psx_muldiv_set(cpu, 37u); } while (0)
+        A2_MULDIV_SET(37u); } while (0)
 
 /* GTE (COP2) */
 uint32_t gte_read_data(CPUState *cpu, uint8_t reg);
 void gte_write_data(CPUState *cpu, uint8_t reg, uint32_t val);
 uint32_t gte_read_ctrl(CPUState *cpu, uint8_t reg);
 void gte_write_ctrl(CPUState *cpu, uint8_t reg, uint32_t val);
+#ifndef A2_STANDALONE
 #define GTE_STALL()        psx_gte_stall(cpu)
 #define GTE_READ(rt)       psx_gte_read(cpu, (rt))
 #define GTE_MFC2(rd)       gte_read_data(cpu, (rd))
 #define GTE_CFC2(rd)       gte_read_ctrl(cpu, (rd))
 #define GTE_MTC2(rd, v)    (psx_gte_stall(cpu), gte_write_data(cpu, (rd), (v)))
 #define GTE_CTC2(rd, v)    (psx_gte_stall(cpu), gte_write_ctrl(cpu, (rd), (v)))
-#define GTE_CMD(c)         gte_execute(cpu, (c))
+#define GTE_CMD(c)         a2_gte_cmd(cpu, (c))   /* A2_GTE_CHECK compares with src/native/gte.c */
 #define LWC2(rt, a)        do { psx_gte_stall(cpu); cpu->gte_data[rt] = A2_LWC2_READ(a); } while (0)
 #define LWC2_HELPER(rt, a) do { psx_gte_stall(cpu); gte_write_data(cpu, (rt), A2_LWC2_READ(a)); } while (0)
 #define SWC2(rt, a)        do { psx_gte_stall(cpu); const uint32_t a_ = (a), v_ = cpu->gte_data[rt];           \
@@ -183,6 +242,7 @@ void gte_write_ctrl(CPUState *cpu, uint8_t reg, uint32_t val);
 #define SWC2_HELPER(rt, a) do { psx_gte_stall(cpu); const uint32_t a_ = (a), v_ = gte_read_data(cpu, (rt));    \
                                 psx_store_cycle_barrier(); cpu->write_word(a_, v_);                         \
                                 gte_precision_store_word(a_, (rt)); } while (0)
+#endif
 
 /* registers */
 #define at (cpu->gpr[1])

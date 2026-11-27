@@ -33,18 +33,30 @@
 
 #include <stdint.h>
 
+#ifdef A2_STANDALONE
+#include "native/a2_native.h"
+#define psx_read_word(a)     a2n_r32(a)
+#define psx_read_half(a)     ((uint16_t)a2n_r16(a))
+#define psx_read_byte(a)     ((uint8_t)a2n_r8(a))
+#define psx_write_word(a, v) a2n_w32((a), (v))
+#define psx_write_half(a, v) a2n_w16((a), (v))
+#define psx_write_byte(a, v) a2n_w8((a), (v))
+#else
 #include "cpu_state.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef A2_STANDALONE
 uint32_t psx_read_word(uint32_t addr);
 uint16_t psx_read_half(uint32_t addr);
 uint8_t  psx_read_byte(uint32_t addr);
 void     psx_write_word(uint32_t addr, uint32_t val);
 void     psx_write_half(uint32_t addr, uint16_t val);
 void     psx_write_byte(uint32_t addr, uint8_t val);
+#endif
 
 /* Guest memory, with the MIPS extension rules. */
 static inline uint32_t a2_lw(uint32_t a)  { return psx_read_word(a); }
