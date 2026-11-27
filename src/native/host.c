@@ -62,14 +62,6 @@ void a2n_host_sleep_until(uint64_t ns)
     if (ns > now) SDL_DelayPrecise(ns - now);
 }
 
-static Uint64 SDLCALL tick(void *ud, SDL_TimerID id, Uint64 interval)
-{
-    (void)ud;
-    (void)id;
-    a2n_clock_tick();
-    return interval;
-}
-
 /* A2_WATCHDOG=seconds: report where the game is when no vertical blank came for that long */
 static uint64_t s_watch_last, s_watch_count;
 static Uint32 SDLCALL watchdog(void *ud, SDL_TimerID id, Uint32 interval)
@@ -751,7 +743,6 @@ int main(int argc, char *argv[])
     open_window();
     open_audio();
     open_first_gamepad();
-    if (!a2n_deterministic()) SDL_AddTimerNS(4000000, tick, NULL);
     if (getenv("A2_WATCHDOG")) {
         s_watch_last = SDL_GetTicks();
         SDL_AddTimer((Uint32)(atoi(getenv("A2_WATCHDOG")) * 1000), watchdog, NULL);

@@ -116,7 +116,7 @@ static uint32_t b0(CPUState *cpu, uint32_t fn)
     case 0x0A: case 0x0B: {                                 /* WaitEvent, TestEvent */
         Event *e = event_of(cpu->gpr[4]);
         if (!e) return 0;
-        if (fn == 0x0A) while (!e->ready) a2n_events_run();
+        if (fn == 0x0A) while (!e->ready) a2n_idle();
         const int r = e->ready;
         e->ready = 0;
         return (uint32_t)r;

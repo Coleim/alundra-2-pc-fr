@@ -12,7 +12,7 @@ extern "C" {
 void a2n_libetc_init(void);
 int a2n_deterministic(void);
 uint64_t a2n_vblank_count(void);
-void a2n_clock_tick(void);
+void a2n_idle(void);
 uint32_t a2n_dma_callback(int channel);
 
 /* bios.c, libc.c */
