@@ -163,3 +163,26 @@ configurations :
 Fonctions réécrites à la main, contrôle fantôme sur toute la session de référence : 0 différence
 de résultat ; `cost_mismatches=0` pour celles du programme principal (lecture des manettes, temps
 de jeu...).
+
+## Phase 4 : le moteur autonome
+
+Sans console simulée, il n'y a plus de cycles : la comparaison image par image avec le framework
+n'a plus de sens au bit près (les chargements, les attentes et donc le compteur de retours
+verticaux diffèrent). Chaque module est donc vérifié séparément contre la référence :
+
+| Module | Vérification | Résultat |
+|---|---|---|
+| Code du jeu | le même C qu'en phase 3 (validé ci-dessus) | — |
+| Bibliothèque PsyQ traduite | session de référence rejouée avec la bibliothèque traduite dans le framework (`A2_LIFT_LIB=1`, fonctions surveillées par le traceur laissées d'origine) | voir ci-dessous |
+| GTE (`gte.c`) | chaque commande du jeu exécutée aussi par le module natif, 64 registres comparés (`A2_GTE_CHECK=1`) | **69 445 270 commandes, 0 écart** |
+| Lecteur de CD + import | chaque secteur lu par le lecteur natif comparé à l'image (`alundra2 --verify-disc`) | **269 215 secteurs identiques octet pour octet** |
+| Flux vidéo (libcd St*) | état de l'anneau de secteurs à chaque interruption, comparé au framework (`A2_DIAG_STREAM`) | même séquence (image prête après le dernier secteur) |
+| GPU (`gpu.c`) | images capturées dans le framework entre deux `DrawSync(0)` (VRAM avant, tout ce que le jeu envoie, VRAM après : `A2_DIAG_GPUCAP`), rejouées par `tools/gpucheck` | logos, vidéo : **identiques** ; scènes 3D et menus : ~94 % des pixels de VRAM identiques, la plupart des autres à ±1 pas de couleur |
+| Cartes mémoire | fonctions de libmcrd sur une carte vierge, format des cadres (`alundra2 --self-test`) ; menu « Continuer » du jeu | conformes ; le jeu lit la carte (« aucune donnée ») |
+| Son, XA, MDEC | rendu (interpolation cubique, IDCT et couleurs standard) | fonctionnels, pas au bit près (choix assumé) |
+| Reprise sur erreur (`longjmp`) | drapeau d'erreur posé en cours de jeu (`A2_POKE`) | le jeu repart du point du `setjmp` |
+
+Écarts restants du GPU : l'interpolation des couleurs et des coordonnées de texture des
+polygones n'arrondit pas toujours comme la référence (±1 sur une partie des pixels ombrés), et
+quelques texels de rectangles coupés par le bord de l'écran. `tools/gpucheck` permet d'essayer
+des variantes (`--knob`) et de suivre un pixel (`--pixel x,y`).

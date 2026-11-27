@@ -75,8 +75,11 @@ static void format(Card *c)
 
 static int formatted(const Card *c) { return c->data[0] == 'M' && c->data[1] == 'C'; }
 
+static int s_testing;
+
 static void save(Card *c)
 {
+    if (s_testing) return;
     char tmp[1200];
     snprintf(tmp, sizeof tmp, "%s.tmp", c->path);
     FILE *f = fopen(tmp, "wb");
@@ -374,4 +377,86 @@ void a2n_card_init(void)
     a2n_native(0x8003D15Cu, "PCinit", n_no_pc);
     a2n_native(0x8003D168u, "PCread", n_no_pc);
     a2n_native(0x8003D240u, "PCwrite", n_no_pc);
+}
+
+/* ---------------------------------------------------------------- self-test (--self-test) */
+
+static int t_call(int (*fn)(CPUState *), uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
+{
+    CPUState c;
+    memset(&c, 0, sizeof c);
+    c.gpr[29] = 0x801FFF00u;
+    c.gpr[4] = a0; c.gpr[5] = a1; c.gpr[6] = a2; c.gpr[7] = a3;
+    a2n_w32(c.gpr[29] + 0x10, a4);
+    a2n_w32(c.gpr[29] + 0x14, a5);
+    fn(&c);
+    return (int)c.gpr[2];
+}
+
+static int t_sync(int *cmd)
+{
+    const int r = t_call(n_MemCardSync, 1, 0x80100000u, 0x80100004u, 0, 0, 0);
+    *cmd = (int)a2n_r32(0x80100000u);
+    return r == 1 ? (int)a2n_r32(0x80100004u) : -100 + r;
+}
+
+static void t_name(uint32_t at, const char *s)
+{
+    for (size_t i = 0; i <= strlen(s); ++i) a2n_w8(at + (uint32_t)i, (uint8_t)s[i]);
+}
+
+/* the card functions on a fresh card in `dir`, as the game uses them; 0 if all is right */
+int a2n_card_self_test(void)
+{
+    int bad = 0, cmd = 0;
+    s_testing = 1;
+    #define CHECK(cond, what) do { if (!(cond)) { fprintf(stderr, "card test: %s failed\n", what); bad++; } } while (0)
+    Card *c = &s_card[0];
+    format(c);
+    memset(c->data + BLOCK_BYTES, 0, CARD_BYTES - BLOCK_BYTES);
+    c->present = 1;
+    c->new_card = 1;
+    s_pending = 0;
+    const uint32_t name = 0x80100100u, buf = 0x80101000u, dir = 0x80110000u, files = 0x80100010u;
+    t_name(name, "BESLES-02601TEST0");
+    CHECK(t_call(n_MemCardExist, 0x00, 0, 0, 0, 0, 0) == 1 && t_sync(&cmd) == McErrNewCard && cmd == McFuncExist, "exist (new card)");
+    CHECK(t_call(n_MemCardAccept, 0x00, 0, 0, 0, 0, 0) == 1 && t_sync(&cmd) == McErrNewCard && cmd == McFuncAccept, "accept");
+    CHECK(t_call(n_MemCardExist, 0x00, 0, 0, 0, 0, 0) == 1 && t_sync(&cmd) == McErrNone, "exist (known card)");
+    CHECK(t_call(n_MemCardExist, 0x10, 0, 0, 0, 0, 0) == 1 && t_sync(&cmd) == McErrCardNotExist, "no card in port 2");
+    CHECK(t_call(n_MemCardSync, 1, 0x80100000u, 0x80100004u, 0, 0, 0) == -1, "sync with nothing asked");
+    CHECK(t_call(n_MemCardCreateFile, 0x00, name, 1, 0, 0, 0) == McErrNone, "create");
+    CHECK(t_call(n_MemCardCreateFile, 0x00, name, 1, 0, 0, 0) == McErrAlreadyExist, "create twice");
+    for (uint32_t i = 0; i < 0x2000; ++i) a2n_w8(buf + i, (uint8_t)(i * 7 + 3));
+    CHECK(t_call(n_MemCardWriteFile, 0x00, name, buf, 0, 0x2000, 0) == 1 && t_sync(&cmd) == McErrNone && cmd == McFuncWriteFile, "write");
+    for (uint32_t i = 0; i < 0x2000; ++i) a2n_w8(buf + i, 0);
+    CHECK(t_call(n_MemCardReadFile, 0x00, name, buf, 0x180, 0xE00, 0) == 1 && t_sync(&cmd) == McErrNone && cmd == McFuncReadFile, "read");
+    int same = 1;
+    for (uint32_t i = 0; i < 0xE00; ++i) same &= a2n_r8(buf + i) == (uint8_t)((i + 0x180) * 7 + 3);
+    CHECK(same, "read back the written data");
+    t_name(0x80100200u, "*");
+    CHECK(t_call(n_MemCardGetDirentry, 0x00, 0x80100200u, dir, files, 0, 15) == McErrNone && a2n_r32(files) == 1 &&
+          a2n_r32(dir + 0x18) == 0x2000 && a2n_r8(dir) == 'B', "directory");
+    CHECK(t_call(n_MemCardDeleteFile, 0x00, name, 0, 0, 0, 0) == McErrNone, "delete");
+    CHECK(t_call(n_MemCardDeleteFile, 0x00, name, 0, 0, 0, 0) == McErrFileNotExist, "delete twice");
+    CHECK(t_call(n_MemCardGetDirentry, 0x00, 0x80100200u, dir, files, 0, 15) == McErrNone && a2n_r32(files) == 0, "empty directory");
+    for (int i = 0; i < 15; ++i) {
+        char n[24];
+        snprintf(n, sizeof n, "BESLES-02601T%02d", i);
+        t_name(name, n);
+        CHECK(t_call(n_MemCardCreateFile, 0x00, name, 1, 0, 0, 0) == McErrNone, "fill the card");
+    }
+    t_name(name, "BESLES-02601FULL");
+    CHECK(t_call(n_MemCardCreateFile, 0x00, name, 1, 0, 0, 0) == McErrBlockFull, "card full");
+    /* the image itself: header, checksums of the directory frames */
+    CHECK(c->data[0] == 'M' && c->data[1] == 'C', "header frame");
+    for (int i = 0; i < 16; ++i) {
+        uint8_t x = 0;
+        for (int k = 0; k < 0x7F; ++k) x ^= frame(c, 0, i)[k];
+        CHECK(x == frame(c, 0, i)[0x7F], "frame checksum");
+    }
+    CHECK(t_call(n_MemCardFormat, 0x00, 0, 0, 0, 0, 0) == McErrNone, "format");
+    CHECK(t_call(n_MemCardGetDirentry, 0x00, 0x80100200u, dir, files, 0, 15) == McErrNone && a2n_r32(files) == 0, "formatted card is empty");
+    #undef CHECK
+    fprintf(stderr, "card test: %s\n", bad ? "FAILED" : "all right");
+    return bad;
 }

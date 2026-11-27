@@ -13,7 +13,28 @@ user-supplied SCPH-1001 dump remains an optional choice.
 (single-track MODE2/2352 CUE/BIN, 633193680 bytes). Disc images live under
 `disc/` and are never committed.
 
-## Build (macOS / Linux)
+## The standalone game (`alundra2`, phases 4 and 5)
+
+The game now runs without the simulated console: its code, translated to C from your disc,
+runs on a small native engine (`src/native/`, see `docs/NATIVE.md`): software GPU and GTE,
+sound chip, CD drive reading the files imported from your disc, memory cards in the standard
+`.mcd` format, SDL3 for window, sound and pads. No PSXRecomp, no BIOS.
+
+```bash
+# after the "game code in C" steps below (src/game/lifted/ must exist)
+cmake -S . -B build-native -G Ninja -DA2_FRAMEWORK=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build-native --target alundra2
+build-native/alundra2 --import "disc/Alundra 2 - Une Legende Est Nee (France).cue"
+```
+
+At first launch without `--import`, the program asks for the disc image itself. Players'
+instructions (French): `docs/INSTALL_FR.md`. Release packages, without any file of the game:
+`scripts/package_native.sh` (`docs/NATIVE.md`, "Building"). They are derived from the game's
+code: personal use only.
+
+## The reference runtime (PSXRecomp, used to verify the standalone game)
+
+### Build (macOS / Linux)
 
 ```bash
 brew install cmake ninja pkg-config freetype harfbuzz   # macOS
@@ -44,7 +65,8 @@ was rewritten by hand. `A2_LIFTED=0` or `A2_OVERRIDES=0` switch the C code off a
 
 ## Status
 
-Local bring-up of the French release: not qualified.
+Version 0.3.0: the standalone game boots, plays its movies, and runs the game and its menus;
+see `PLAN.md` (phase 6: full playthrough and 1:1 validation still to do).
 
 <!-- framework-pin -->
 **Framework:** `psxrecomp` and `recomp-ui` are submodules pinned to psxrecomp pin I 0.1.23 (psxrecomp `578bd3b`, recomp-ui `5302f1f`).

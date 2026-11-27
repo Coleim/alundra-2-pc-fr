@@ -13,9 +13,13 @@
 #ifdef _WIN32
 #include <direct.h>
 #define MKDIR(p) _mkdir(p)
+#define SEEK64(f, off) _fseeki64((f), (long long)(off), SEEK_SET)
+#define SIZE64(f) (_fseeki64((f), 0, SEEK_END), (long long)_ftelli64(f))
 #else
 #include <sys/stat.h>
 #define MKDIR(p) mkdir((p), 0755)
+#define SEEK64(f, off) fseeko((f), (off_t)(off), SEEK_SET)
+#define SIZE64(f) (fseeko((f), 0, SEEK_END), (long long)ftello(f))
 #endif
 
 #include "cd.h"
@@ -117,7 +121,7 @@ int a2n_disc_read(uint32_t lba, uint8_t *raw)
     const uint32_t i = lba - r->lba;
     if (r->meta) {
         if (!s_meta) return 0;
-        fseek(s_meta, (long)(r->meta == 2 ? r->meta_off : r->meta_off + i) * SECTOR, SEEK_SET);
+        SEEK64(s_meta, (uint64_t)(r->meta == 2 ? r->meta_off : r->meta_off + i) * SECTOR);
         if (fread(raw, 1, SECTOR, s_meta) != SECTOR) return 0;
         if (r->meta == 2) {                        /* the run's last kept sector, at its own place */
             const uint32_t a = lba + 150;
@@ -135,11 +139,11 @@ int a2n_disc_read(uint32_t lba, uint8_t *raw)
         if (!r->f) return 0;
     }
     if (r->raw) {
-        fseek(r->f, (long)i * SECTOR, SEEK_SET);
+        SEEK64(r->f, (uint64_t)i * SECTOR);
         return fread(raw, 1, SECTOR, r->f) == SECTOR;
     }
     header(raw, lba, i + 1 == r->count ? 0x89 : 0x08);
-    fseek(r->f, (long)i * USER, SEEK_SET);
+    SEEK64(r->f, (uint64_t)i * USER);
     const size_t n = fread(raw + 24, 1, USER, r->f);
     (void)n;
     return 1;
@@ -159,7 +163,7 @@ static int read_user(uint32_t lba, uint32_t size, uint8_t *out)
 {
     for (uint32_t done = 0; done < size; done += USER, ++lba) {
         uint8_t sec[SECTOR];
-        if (fseek(s_img, (long)lba * SECTOR, SEEK_SET) || fread(sec, 1, SECTOR, s_img) != SECTOR) return 0;
+        if (SEEK64(s_img, (uint64_t)lba * SECTOR) || fread(sec, 1, SECTOR, s_img) != SECTOR) return 0;
         memcpy(out + done, sec + 24, size - done < USER ? size - done : USER);
     }
     return 1;
@@ -230,12 +234,12 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
     const size_t il = strlen(image);
     if (il > 4 && (!strcmp(image + il - 4, ".cue") || !strcmp(image + il - 4, ".CUE"))) {
         FILE *c = fopen(image, "r");
-        if (!c) return "cannot open the .cue file";
+        if (!c) return "impossible d'ouvrir le fichier .cue";
         char line[512], name[400] = "";
         while (fgets(line, sizeof line, c))
             if (sscanf(line, " FILE \"%399[^\"]\"", name) == 1) break;
         fclose(c);
-        if (!name[0]) return "no FILE line in the .cue file";
+        if (!name[0]) return "le fichier .cue ne nomme aucun fichier .bin";
         const char *slash = strrchr(image, '/');
 #ifdef _WIN32
         const char *bs = strrchr(image, '\\');
@@ -245,13 +249,12 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
         else snprintf(bin, sizeof bin, "%s", name);
     }
     s_img = fopen(bin, "rb");
-    if (!s_img) { snprintf(err, sizeof err, "cannot open %s", bin); return err; }
-    fseek(s_img, 0, SEEK_END);
-    const long bytes = ftell(s_img);
-    if (bytes <= 0 || bytes % SECTOR) { fclose(s_img); return "not a MODE2/2352 image (size)"; }
+    if (!s_img) { snprintf(err, sizeof err, "impossible d'ouvrir %s", bin); return err; }
+    const long long bytes = SIZE64(s_img);
+    if (bytes <= 0 || bytes % SECTOR) { fclose(s_img); return "ce n'est pas une image MODE2/2352 (BIN/CUE en mode RAW)"; }
     const uint32_t sectors = (uint32_t)(bytes / SECTOR);
     uint8_t pvd[USER];
-    if (!read_user(16, USER, pvd) || memcmp(pvd + 1, "CD001", 5)) { fclose(s_img); return "not a PlayStation disc"; }
+    if (!read_user(16, USER, pvd) || memcmp(pvd + 1, "CD001", 5)) { fclose(s_img); return "ce n'est pas un disque PlayStation"; }
     uint32_t rlba, rsize;
     memcpy(&rlba, pvd + 156 + 2, 4);
     memcpy(&rsize, pvd + 156 + 10, 4);
@@ -262,13 +265,13 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
     /* the French release: SLES_026.01 */
     const Entry *boot = NULL;
     for (int i = 0; i < n; ++i) if (!strcmp(list[i].path, "SLES_026.01")) boot = &list[i];
-    if (!boot) { free(list); fclose(s_img); return "this is not Alundra 2 (France, SLES-02601)"; }
+    if (!boot) { free(list); fclose(s_img); return "ce n'est pas Alundra 2 (France, SLES-02601)"; }
     {
         uint8_t *exe = malloc(boot->size);
         read_user(boot->lba, boot->size, exe);
         const uint64_t h = fnv(exe, boot->size);
         free(exe);
-        if (h != A2N_EXE_FNV) { free(list); fclose(s_img); return "SLES_026.01 does not match the French release"; }
+        if (h != A2N_EXE_FNV) { free(list); fclose(s_img); return "SLES_026.01 ne correspond pas à la version française du jeu"; }
     }
 
     char p[1400];
@@ -284,10 +287,10 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
         snprintf(p, sizeof p, "%s/files/%s", data_dir, e->path);
         make_dirs(p);
         FILE *o = fopen(p, "wb");
-        if (!o) { free(list); free(covered); fclose(s_img); return "cannot write the data folder"; }
+        if (!o) { free(list); free(covered); fclose(s_img); return "impossible d'écrire dans le dossier des données"; }
         const uint32_t count = (e->size + USER - 1) / USER;
         for (uint32_t k = 0; k < count; ++k) {
-            fseek(s_img, (long)(e->lba + k) * SECTOR, SEEK_SET);
+            SEEK64(s_img, (uint64_t)(e->lba + k) * SECTOR);
             if (fread(sec, 1, SECTOR, s_img) != SECTOR) memset(sec, 0, sizeof sec);
             if (e->raw) fwrite(sec, 1, SECTOR, o);
             else fwrite(sec + 24, 1, k + 1 == count ? e->size - k * USER : USER, o);
@@ -302,7 +305,7 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
     FILE *meta = fopen(p, "wb");
     snprintf(p, sizeof p, "%s/disc.txt", data_dir);
     FILE *idx = fopen(p, "w");
-    if (!meta || !idx) { free(list); free(covered); fclose(s_img); return "cannot write the data folder"; }
+    if (!meta || !idx) { free(list); free(covered); fclose(s_img); return "impossible d'écrire dans le dossier des données"; }
     fprintf(idx, "# Alundra 2 (France, SLES-02601): files of the disc, see src/native/disc.c\n");
     fprintf(idx, "sectors %u\n", sectors);
     for (int i = 0; i < n; ++i)
@@ -317,7 +320,7 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
         while (e < sectors && !covered[e]) ++e;
         uint32_t open_lba = 0, open_count = 0, open_off = 0;
         for (uint32_t k = l; k < e;) {
-            fseek(s_img, (long)k * SECTOR, SEEK_SET);
+            SEEK64(s_img, (uint64_t)k * SECTOR);
             if (fread(sec, 1, SECTOR, s_img) != SECTOR) memset(sec, 0, sizeof sec);
             fwrite(sec, 1, SECTOR, meta);
             if (open_count && open_lba + open_count == k) {
@@ -331,7 +334,7 @@ const char *a2n_disc_import(const char *image, const char *data_dir, void (*prog
             memcpy(prev, sec, SECTOR);
             uint32_t same = 0;
             for (uint32_t j = k + 1; j < e; ++j) {
-                fseek(s_img, (long)j * SECTOR, SEEK_SET);
+                SEEK64(s_img, (uint64_t)j * SECTOR);
                 if (fread(sec, 1, SECTOR, s_img) != SECTOR) break;
                 if (memcmp(sec, prev, 12) || memcmp(sec + 15, prev + 15, SECTOR - 15)) break;
                 same++;

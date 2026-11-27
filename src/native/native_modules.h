@@ -48,6 +48,7 @@ void a2n_dma_irq_enable(int channel, int on);
 void a2n_pad_init(void);
 void a2n_pad_vblank(void);
 void a2n_card_init(void);
+int a2n_card_self_test(void);
 
 #ifdef __cplusplus
 }

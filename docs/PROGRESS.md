@@ -37,9 +37,26 @@ Priority: a 1:1 port first (release 1.0), improvements after (see `PLAN.md`).
 - Finding: libetc's `VSync` wait ends a few loop turns short of its timeout in this timing model;
   code running in the VBlank interrupt must charge the original's exact cycles.
 
-## Next (phase 4, readable rewrites continue in parallel)
-- Native files, input and memory cards first, then VSync/timing, GTE, GPU, sound.
-- Readable rewrites: loader, main loop, projection, actors.
+## Phase 4 (native engine) - done
+
+- `src/native/`, target `alundra2`: the game code and the translated PsyQ library run on a PC
+  engine without PSXRecomp or OpenBIOS (`docs/NATIVE.md`).
+- Native: libetc (VSync, callbacks), libgpu drawing, libpad, libmcrd, BIOS calls, critical
+  sections, longjmp. At register level (libraries unchanged): CD drive, DMA, MDEC, sound chip.
+- Checks: GTE bit-exact; all 269 215 disc sectors byte-identical through the drive; GPU replay
+  of 23 captured frames (`tools/gpucheck`): logos/movie identical, 3D ~94 % of pixels
+  identical; streaming ring and DMA interrupts identical to the reference runtime; memory card
+  self-test; error-recovery longjmp.
+
+## Phase 5 (import and packages) - done
+
+- First launch: choose the `.cue`/`.bin`, French executable checked, files copied (progress).
+- Packages: Windows x64 (`alundra2.exe`, static) and macOS universal (`Alundra 2.app`), no game
+  data; CI builds the engine on Linux/macOS/Windows; French install notice.
+
+## Next (phase 6)
+
+- Full playthrough, saves exchanged with the original, Dell G15 test, GPU rasterizer to 1:1.
 
 ## Not part of the real port
 `build-release`, `dist/` (v1 recompilation packages, with disc, never publish), `scripts/package_*.sh`.

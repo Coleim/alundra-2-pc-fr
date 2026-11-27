@@ -33,10 +33,10 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #define TITLE "Alundra 2"
 
 static struct {
-    int headless, fullscreen, scale, smooth, vsync;
+    int headless, fullscreen, scale, smooth, vsync, self_test;
     long frames, shot_every;
     const char *data_opt, *saves_opt, *import, *dump_vram, *dump_ram, *shot_prefix, *verify;
-} opt = { 0, 0, 3, 0, 0, -1, 0, NULL, NULL, NULL, NULL, NULL, "shot", NULL };
+} opt = { 0, 0, 3, 0, 0, 0, -1, 0, NULL, NULL, NULL, NULL, NULL, "shot", NULL };
 
 static char s_data[1024], s_saves[1024];
 static SDL_Window *s_win;
@@ -121,6 +121,16 @@ static void choose_dirs(void)
     trim_slash(s_data);
     trim_slash(s_saves);
     SDL_CreateDirectory(s_saves);
+    /* memory cards of the earlier (0.2) builds: copied once, the originals stay */
+    char *old = SDL_GetPrefPath(NULL, "Alundra 2");
+    for (int i = 1; old && !opt.saves_opt && !getenv("A2_SAVES") && i <= 2; ++i) {
+        char from[1100], to[1100];
+        snprintf(from, sizeof from, "%ssaves/card%d.mcd", old, i);
+        snprintf(to, sizeof to, "%s/card%d.mcd", s_saves, i);
+        if (SDL_GetPathInfo(from, NULL) && !SDL_GetPathInfo(to, NULL) && SDL_CopyFile(from, to))
+            fprintf(stderr, "a2: memory card copied from %s\n", from);
+    }
+    SDL_free(old);
     SDL_free(pref);
 }
 
@@ -142,8 +152,8 @@ void a2n_host_fatal_hook(void)
 {
     if (!opt.headless)
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, TITLE,
-                                 "Le jeu s'est arrete sur une erreur interne.\n"
-                                 "Les details sont dans la sortie d'erreur (stderr).", s_win);
+                                 "Le jeu s'est arrêté sur une erreur interne.\n"
+                                 "Les détails sont dans la sortie d'erreur (stderr).", s_win);
 }
 
 /* ---------------------------------------------------------------- window */
@@ -677,6 +687,7 @@ int main(int argc, char *argv[])
         else if (!strcmp(a, "--shot-every") && v) opt.shot_every = atol(argv[++i]);
         else if (!strcmp(a, "--input") && v) load_input_script(argv[++i]);
         else if (!strcmp(a, "--verify-disc") && v) opt.verify = argv[++i];
+        else if (!strcmp(a, "--self-test")) opt.self_test = 1;
         else if (!strcmp(a, "--dump-audio") && v) {
             s_wav = fopen(argv[++i], "wb");
             if (s_wav) wav_header(s_wav, 0);
@@ -693,6 +704,7 @@ int main(int argc, char *argv[])
     SDL_SetAppMetadata(TITLE, "1.0", "alundra2-fr");
     choose_dirs();
 
+    if (opt.self_test) return a2n_card_self_test();
     if (opt.import && !run_import(opt.import)) return 1;
     if (!a2n_disc_open(s_data)) {
         if (opt.headless) {
@@ -705,7 +717,7 @@ int main(int argc, char *argv[])
     size_t size = 0;
     void *exe = a2n_host_load("files/SLES_026.01", &size);
     if (!exe || !a2n_load_exe(exe, size)) {
-        message(1, "Le dossier de donnees %s est incomplet (SLES_026.01). Supprimez-le et relancez le jeu.", s_data);
+        message(1, "Le dossier de données %s est incomplet (SLES_026.01). Supprimez-le et relancez le jeu.", s_data);
         return 1;
     }
     SDL_free(exe);

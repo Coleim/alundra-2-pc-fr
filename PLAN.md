@@ -107,27 +107,27 @@ phase 7 ; le reste devient lisible au fil de l'eau, en parallèle de la phase 4.
 - [ ] À rendre lisible au fil de l'eau (phase 4 en parallèle) : chargeur de fichiers (`func_8001BD5C`, `func_8001BDB0`, `func_8001BCA4`), boucle principale (`main` = `func_8001A99C`, `GAME00` = `func_80089AE8`), projection (`func_8002569C`, `func_80025A9C`, `func_80025B90`), entités et collisions (table `0x8011DCE0`, `func_800A71FC`), rendu des modèles et décors, scripts de cinématique (`EVENT00`), menus, son, mini-jeux.
 - **Jalon atteint :** 100 % des fonctions du jeu en C, mode mixte encore actif pour la bibliothèque PsyQ et la console simulée.
 
-### Phase 4 — Couche PsyQ native et plateforme  `[ ]`  (XL, en parallèle de la phase 3)
-Remplacer la console simulée par du code PC, module par module. Chaque module est livré et vérifié séparément :
-- [ ] **Fichiers :** le « CD » devient des fichiers extraits du disque du joueur ; chargements instantanés (M).
-- [ ] **Entrées :** manette et clavier via SDL3, au format libpad d'origine (S–M).
-- [ ] **Cartes mémoire :** fichiers de sauvegarde **compatibles avec l'original** (format PS1) (M).
-- [ ] **GTE :** calculs de géométrie en logiciel, bit-exacts (M).
-- [ ] **GPU :** rendu OpenGL des primitives PS1 (listes d'ordre, polygones, sprites, textures à palette, transparences, dither). Résolution interne 1x en 1.0 (L).
-- [ ] **Son :** pilote de synthèse des banques VAB et des séquences SEQ, mixage, effets (réverbération), musiques XA (L).
-- [ ] **Vidéo :** décodeur MDEC/STR (intro `A2STR.STR`) (M).
-- [ ] **Temps :** boucle à 50 Hz (PAL) indépendante du rythme de l'écran ; son indépendant de l'image (M).
-- [ ] **Cible performance :** 50 images/s stables sur le Dell G15 (RTX forcée) et jouable sur puce intégrée (S–M).
-- [ ] Retirer PSXRecomp et OpenBIOS du produit final ; l'exécutable ne contient plus de recompilation (M).
-- **Jalon :** le jeu tourne 1:1 sans la console simulée.
+### Phase 4 — Couche PsyQ native et plateforme  `[x]` terminée  (XL)
+La console simulée est remplacée par un moteur PC autonome, `src/native/` (cible `alundra2`, voir `docs/NATIVE.md`). Le code du jeu (traduit et réécrit en phase 3) et la bibliothèque PsyQ traduite tournent dessus ; il n'y a plus ni PSXRecomp ni OpenBIOS dans le produit.
+- [x] **Fichiers :** lecteur de CD natif (registres d'origine, libcd/libds/streaming inchangés) qui lit les fichiers copiés du disque du joueur. Les **269 215 secteurs** relus sont identiques octet pour octet à l'image (`alundra2 --verify-disc`). Chargements bien plus rapides que la console (secteurs de données au rythme du jeu, flux XA/vidéo au rythme d'origine).
+- [x] **Entrées :** manette et clavier via SDL3, vus par le jeu comme une DualShock analogique (sticks, vibrations), au format libpad d'origine.
+- [x] **Cartes mémoire :** images de 128 Ko au format standard des cartes PlayStation (`.mcd`, compatibles émulateurs) ; libmcrd native ; chargement vérifié dans le jeu, création/écriture/lecture/suppression vérifiées (`--self-test`). Sauvegarde en cours de partie réelle : à confirmer en phase 6.
+- [x] **GTE :** en logiciel, **bit-exact** (69 445 270 commandes comparées au framework, 0 écart).
+- [~] **GPU :** rasteriseur logiciel (VRAM 1024×512, polygones, sprites, textures 4/8/15 bits, transparences, masque, dither), image présentée par SDL3. Rejeu d'images capturées dans le framework (`tools/gpucheck`) : logos et vidéo **identiques** ; scènes 3D et menus ~94 % des pixels de VRAM identiques, le reste à ±1 pas de couleur (arrondis d'interpolation). À affiner pour le 1:1 strict.
+- [x] **Son :** puce sonore native (24 voix ADPCM, enveloppes, modulation, bruit, réverbération, entrée CD) pilotée par le pilote son du jeu lui-même ; musiques XA décodées. Interpolation cubique au lieu de la table de la console : même rendu à l'oreille, pas au bit près.
+- [x] **Vidéo :** MDEC natif au niveau registres (libpress inchangée) : intro `A2STR.STR` et films.
+- [x] **Temps :** retour vertical à 50 Hz (PAL) sur l'horloge du PC, interruptions coopératives ; mode déterministe (`A2_DETERMINISTIC=1`) pour les tests. Reprise sur erreur disque (`longjmp`) vérifiée.
+- [x] **Performance :** ~15 % d'un cœur sur Mac (Apple Silicon) à 50 Hz ; test sur le Dell G15 à faire par l'utilisateur.
+- [x] PSXRecomp et OpenBIOS retirés du produit : `alundra2` se construit avec `-DA2_FRAMEWORK=OFF`.
+- **Jalon atteint :** le jeu tourne sans la console simulée (logos, film d'intro, titre, nouvelle partie, cinématiques, jeu, menus, cartes mémoire).
 
-### Phase 5 — Importation du disque et empaquetage  `[ ]`  (M)
-- [ ] Assistant de premier lancement : l'utilisateur choisit son `.cue`/`.bin` (ou `.chd`) ; vérification de l'empreinte du disque français ; extraction vers un dossier de données.
-- [ ] Versions de disque : français SLES-02601 d'abord (autres langues = hors périmètre 1.0).
-- [ ] Windows x64 : exécutable + installation simple ; flag « carte graphique hautes performances ».
-- [ ] macOS Apple Silicon : `Alundra 2.app`.
-- [ ] Construction automatisée depuis le code source (CI), sans aucune donnée du jeu.
-- [ ] Documentation d'installation (français).
+### Phase 5 — Importation du disque et empaquetage  `[x]` terminée  (M)
+- [x] Premier lancement : l'utilisateur choisit son `.cue`/`.bin` (fenêtre SDL et boîte de dialogue du système) ; vérification de l'exécutable français (empreinte de `SLES_026.01`) ; copie des fichiers avec barre de progression vers le dossier de données de l'utilisateur. `.chd` : non pris en charge.
+- [x] Versions de disque : français SLES-02601 seulement.
+- [x] Windows x64 : `alundra2.exe` autonome (compilation croisée MinGW, SDL3 statique), demande de la carte graphique performante.
+- [x] macOS : `Alundra 2.app` universelle (Apple Silicon et Intel), signée localement.
+- [x] Construction automatisée (CI, `.github/workflows/native.yml`) : moteur sur Linux, macOS et Windows, sans aucune donnée du jeu ; les paquets complets se font en local (`scripts/package_native.sh`).
+- [x] Notice d'installation en français : `docs/INSTALL_FR.md` (jointe aux paquets).
 
 ### Phase 6 — Validation 1:1 et release 1.0  `[ ]`  (L)
 - [ ] Parcours complet du jeu, du début à la fin, sans bloquant ; comparaison avec l'original sur des points de contrôle.
@@ -179,9 +179,7 @@ Aucune n'entre avant la 1.0. Chacune est un **réglage**, désactivé par défau
 
 ## 6. État actuel (résumé)
 
-- **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé, formats inventoriés, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; **phase 2** : bibliothèques Sony reconnues par signature, code du jeu et bibliothèques séparés.
-- **Phase 3 terminée :** **tout le code du jeu est en C** (2 707 fonctions : 2 678 traduites, 29 réécrites à la main), vérifié sur deux sessions de référence (GPU et VRAM identiques à chaque image). Réécritures lisibles : manette, système, cadence et listes d'affichage, caméra.
-- **Chiffres :** 3 404 fonctions = **2 707 de jeu** (toutes en C) + 697 de bibliothèque (547 reconnues).
-- **Prochaine étape recommandée (1:1 d'abord) :**
-  1. Phase 4 : modules natifs les plus simples d'abord (fichiers, entrées, cartes mémoire), puis `VSync`/temps, GTE, GPU, son.
-  2. En parallèle : rendre lisibles le chargeur, la boucle principale, la projection et les entités.
+- **Terminé :** v1 jouable (Mac/Windows) ; **phase 1** : disque extrait, tout le code cartographié et découpé, formats inventoriés, harnais de test, outils de vérification 1:1 (rejeu, journal GPU, comparaison image par image) ; **phase 2** : bibliothèques Sony reconnues par signature, code du jeu et bibliothèques séparés ; **phase 3** : tout le code du jeu en C (2 707 fonctions), vérifié sur deux sessions de référence.
+- **Phases 4 et 5 terminées :** moteur PC autonome (`src/native/`, cible `alundra2`) sans console simulée ; import du disque au premier lancement ; paquets Windows et macOS sans données du jeu (version 0.3.0).
+- **Écarts connus au 1:1 :** GPU (~6 % des pixels à ±1 pas sur les scènes 3D capturées), son et vidéo pas au bit près (formules standard), sauvegarde en cours de partie à confirmer.
+- **Prochaine étape recommandée :** phase 6 (parcours complet, sauvegardes croisées avec l'original, test sur le Dell G15), en affinant le rasteriseur avec `tools/gpucheck`.
