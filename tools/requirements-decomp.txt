@@ -1,0 +1,11 @@
+# Tools that split the game's executables into assembly (splat) for tools/a2lift.py.
+# Pinned: the translated code is checked against these versions.
+splat64[mips]==0.50.1
+spimdisasm==1.42.4
+rabbitizer==1.16.2
+crunch64==0.6.2
+intervaltree==3.1.0
+pylibyaml==0.1.0
+PyYAML==6.0.3
+tqdm==4.67.1
+colorama==0.4.6

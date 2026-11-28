@@ -1,0 +1,68 @@
+# Playable builds of the game (macOS universal + Windows x64), made on a machine that has the
+# disc image: a self-hosted runner with the label "alundra-disc" and the repository variable
+# A2_DISC_CUE (path of alundra.cue on that machine). The game's files and its translated code
+# never enter the repository: scripts/build_full.sh produces them on the runner from the disc.
+# The packages contain the game's translated code: they are uploaded as artifacts only when the
+# repository is private; otherwise they stay on the runner, in ~/alundra2-builds/<commit>/.
+#
+# Setup: docs/NATIVE.md, "Continuous integration".
+name: Game build (self-hosted, with the disc)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tools/a2lift.py'
+      - 'tools/extract_disc.py'
+      - 'tools/requirements-decomp.txt'
+      - 'config/**'
+      - 'symbols/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'scripts/build_full.sh'
+      - 'scripts/package_native.sh'
+      - 'assets/**'
+      - 'docs/INSTALL_FR.md'
+      - 'VERSION'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: [self-hosted, alundra-disc]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false          # keep .venv-decomp, extracted/ and the build folders between runs
+
+      - name: Build from the disc
+        env:
+          DISC: ${{ vars.A2_DISC_CUE }}
+        run: |
+          test -n "$DISC" || { echo "::error::set the repository variable A2_DISC_CUE (path of alundra.cue on the runner)"; exit 1; }
+          rm -rf dist
+          scripts/build_full.sh --disc "$DISC" --out dist
+
+      - name: Keep the packages on the runner
+        run: |
+          dest="$HOME/alundra2-builds/${GITHUB_SHA::8}"
+          mkdir -p "$dest"
+          cp dist/*.zip "$dest/"
+          echo "Packages: $dest" >> "$GITHUB_STEP_SUMMARY"
+          ls -la "$dest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the packages (private repository only)
+        if: github.event.repository.private
+        uses: actions/upload-artifact@v4
+        with:
+          name: alundra2-${{ github.sha }}
+          path: dist/*.zip
+          retention-days: 30

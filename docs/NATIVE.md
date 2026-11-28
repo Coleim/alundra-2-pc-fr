@@ -93,6 +93,29 @@ scripts/package_native.sh                      # dist/alundra2-fr-<version>-{mac
 
 `-DA2_ENGINE_ONLY=ON` builds the engine without the game code (compilation check, CI).
 
+Everything at once, from the disc image to the packages (Python tools, extraction, splat,
+translation, both builds): `scripts/build_full.sh --disc /path/to/alundra.cue`.
+
+## Continuous integration
+
+- `.github/workflows/native.yml` (GitHub's machines, every push): the engine and the
+  hand-written game code compile on Linux, macOS and Windows (`A2_ENGINE_ONLY=ON`), and the GPU
+  coverage test (`tools/gpucheck/gputest.c`) passes. No game code there: the program builds but
+  cannot run the game.
+- `.github/workflows/full-build.yml` (a machine that has the disc): the playable packages,
+  through `scripts/build_full.sh`. The game's files and its translated code are produced on that
+  machine from the disc and never enter the repository. Setup, once, on that Mac:
+  1. tools: `brew install cmake ninja mingw-w64 python` (and Xcode's command line tools);
+  2. on GitHub, *Settings > Actions > Runners > New self-hosted runner* (macOS): run the
+     commands shown, adding `--labels alundra-disc` to `./config.sh`, then `./run.sh` (or
+     `./svc.sh install && ./svc.sh start` to keep it running in the background);
+  3. *Settings > Secrets and variables > Actions > Variables*: `A2_DISC_CUE` = the path of
+     `alundra.cue` on that Mac.
+  The workflow runs on every push to `main` that changes the code (and by hand: *Actions >
+  Game build > Run workflow*). Packages: in `~/alundra2-builds/<commit>/` on that Mac, and as
+  downloadable artifacts when the repository is private. It never runs for pull requests, so
+  code from a fork cannot run on that machine.
+
 ## Test and diagnostic options
 
 | Option / variable | Use |
