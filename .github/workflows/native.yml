@@ -56,9 +56,12 @@ jobs:
       - name: Build
         run: cmake --build build --target alundra2
 
-      - name: GPU replay tool
+      - name: GPU tools and coverage test
         if: matrix.name != 'windows-x64'
-        run: cc -O2 -Isrc/native tools/gpucheck/gpucheck.c src/native/gpu.c -o build/gpucheck
+        run: |
+          cc -O2 -Isrc/native tools/gpucheck/gpucheck.c src/native/gpu.c -o build/gpucheck
+          cc -O2 -Isrc/native tools/gpucheck/gputest.c src/native/gpu.c -o build/gputest
+          build/gputest
 
       - uses: actions/upload-artifact@v4
         with:

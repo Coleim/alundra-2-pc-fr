@@ -287,7 +287,9 @@ static void triangle(const Vtx *a, const Vtx *b, const Vtx *c, int gouraud, int 
     /* edge functions with the top-left rule: right and bottom edges are left out */
     const Vtx *e0a = v1, *e0b = v2, *e1a = v2, *e1b = v0, *e2a = v0, *e2b = v1;
     #define EDGE(pa, pb, px, py) ((int64_t)((pb)->x - (pa)->x) * ((py) - (pa)->y) - (int64_t)((pb)->y - (pa)->y) * ((px) - (pa)->x))
-    #define TOPLEFT(pa, pb) (((pa)->y == (pb)->y && (pb)->x < (pa)->x) || ((pb)->y < (pa)->y))
+    /* the triangle runs clockwise on screen (area > 0 with y down): its top edge goes to the
+     * right, its left edges go up */
+    #define TOPLEFT(pa, pb) (((pa)->y == (pb)->y && (pb)->x > (pa)->x) || ((pb)->y < (pa)->y))
     const int tl0 = TOPLEFT(e0a, e0b), tl1 = TOPLEFT(e1a, e1b), tl2 = TOPLEFT(e2a, e2b);
 
     for (int y = y0; y <= y1; ++y) {

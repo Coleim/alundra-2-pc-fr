@@ -19,6 +19,7 @@ typedef struct { uint32_t w0, w[12]; int n; uint8_t dither, semi_mode, depth, ma
 static CmdInfo *s_cmds;
 static uint32_t s_n_cmds;
 static int s_show_op = -1, s_shown;
+static int s_rx0 = -1, s_ry0, s_rx1, s_ry1;      /* --region x0,y0,x1,y1: list differences there */
 
 static int load(const char *path, void *dst, size_t n)
 {
@@ -145,6 +146,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--diff") && i + 1 < argc) { diff = argv[++i]; continue; }
         if (!strcmp(argv[i], "--show") && i + 1 < argc) { s_show_op = (int)strtol(argv[++i], NULL, 16); continue; }
         if (!strcmp(argv[i], "--probe")) { s_probe = 1; continue; }
+        if (!strcmp(argv[i], "--region") && i + 1 < argc) { sscanf(argv[++i], "%d,%d,%d,%d", &s_rx0, &s_ry0, &s_rx1, &s_ry1); continue; }
         if (!strcmp(argv[i], "--pixel") && i + 1 < argc) { sscanf(argv[++i], "%d,%d", &g_gpu_dbg_x, &g_gpu_dbg_y); continue; }
         if (!strcmp(argv[i], "--knob") && i + 1 < argc) {
             int k = 0, v = 0;
@@ -194,6 +196,13 @@ int main(int argc, char **argv)
                     for (int du = -2; du <= 2; ++du)
                         if ((texel4(ci->tx, ci->ty, u + du, v + dv, cx, cy) & 0x7FFF) == (s_after[k] & 0x7FFF)) { hits++; hu = du; hv = dv; }
                 if (hits == 1) printf("   probe x0 %d y0 %d w %d: du %+d dv %+d (px %d,%d)\n", x0, y0, (int)(ci->w[3] & 0x3FF), hu, hv, px, py);
+            }
+            if (s_rx0 >= 0 && k % VRAM_W >= s_rx0 && k % VRAM_W < s_rx1 && k / VRAM_W >= s_ry0 && k / VRAM_W < s_ry1 &&
+                (dr > 2 || dg > 2 || db > 2)) {
+                const CmdInfo *ci = &s_cmds[o];
+                printf("   rg %3d,%3d mine %04x ref %04x owner#%u", k % VRAM_W, k / VRAM_W, g_vram[k], s_after[k], o);
+                for (int j = 0; j < ci->n && j < 10; ++j) printf(" %08x", ci->w[j]);
+                printf("\n");
             }
             if (s_show_op == op && s_shown < 24) {
                 s_shown++;
